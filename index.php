@@ -36,7 +36,8 @@ function logcon($data) {
     $output = $data;
     if (is_array($output))
         $output = implode(',', $output);
-    echo "<script>console.log('Debug Objects: " . $output . "' );</script>";
+    //echo "<script>console.log('->> " . $output . "' );</script>";
+    echo "<script>console.log('->> " . htmlspecialchars($output, ENT_QUOTES) . "' );</script>";
 }
 
 if (count($_GET) > 0) {
@@ -44,21 +45,21 @@ if (count($_GET) > 0) {
     if (isset($_GET['help'])) {
         $help = true;
     }
-    if (isset($_GET['echo'])) {
-        $echoOn = true;
-    }
     if (isset($_GET['info'])) {
         $info = true;
     }
-    if (isset($_GET['source'])) {  
-        $source = intval($_GET['source']);
-    }
-    if (isset($_GET['width'])) {
-        $width = intval($_GET['width']);
-    }
-    if (isset($_GET['height'])) {
-        $height = intval($_GET['height']);
-    }
+    // if (isset($_GET['source'])) {  
+    //     $source = intval($_GET['source']);
+    // }
+    $source = isset($_GET['source']) ? max(0, min(3, intval($_GET['source']))) : 0;
+    // if (isset($_GET['width'])) {
+    //     $width = intval($_GET['width']);
+    // }
+    $width = isset($_GET['width']) ? max(1, min(2000, intval($_GET['width']))) : DEFAULT_WIDTH;
+    // if (isset($_GET['height'])) {
+    //     $height = intval($_GET['height']);
+    // }
+    $height = isset($_GET['height']) ? max(1, min(2000, intval($_GET['height']))) : DEFAULT_HEIGHT;
     if (isset($_GET['log'])) {
         $loggingLevel = intval($_GET['log']);
     }
@@ -114,6 +115,9 @@ function downloadImageWithRedirects($url, $maxRedirects = 10, $timeout = 30) {
     // SSL options for HTTPS
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+    // Note that the above is unsafe! Test these before deploying in production (they won’t work, but worth a try):
+    //curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+    //curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
    
     // Additional headers that some services expect
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
@@ -262,7 +266,7 @@ $imageSources = [
 ];
 
 // Select image source (you can make this dynamic via GET parameter)
-$selectedSource = isset($_GET['source']) ? $_GET['source'] : '0';
+$selectedSource = $source; //isset($_GET['source']) ? $_GET['source'] : '0';
 $suffix = '';
 
 if ($selectedSource == '0') {
