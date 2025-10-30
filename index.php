@@ -1,14 +1,15 @@
 <?php
 // Old way: https://localhost/index.php?echo=true&img=false&imgDataOutputOnly=false
 // Use this: https://localhost/index.php?echo&img
-$echoOn = false;
-$imgOn = false;
-//$imgDataOutputOnly = true;
+const DEFAULT_WIDTH = 128;
+const DEFAULT_HEIGHT = 128;
+
 $info = false;
 $source = 0;
 $width = -1;
 $height = -1;
-
+$loggingLevel = "none"; // "none", "console", "page", "both"
+$help = false;
 
 $webPageStart = '
 <!DOCTYPE html>
@@ -23,7 +24,15 @@ $webPageEnd = '
     </body>
 </html>';
 
-function logmsg($data) {
+function logpage($data) {
+    if ($GLOBALS['loggingLevel'] === "none" || $GLOBALS['loggingLevel'] === "console") 
+        return;
+    echo "<p>" . $data . "</p>";
+}
+
+function logcon($data) {
+    if ($GLOBALS['loggingLevel'] === "none" || $GLOBALS['loggingLevel'] === "page") 
+        return;
     $output = $data;
     if (is_array($output))
         $output = implode(',', $output);
@@ -32,11 +41,11 @@ function logmsg($data) {
 
 if (count($_GET) > 0) {
     // Shorter version, check if the parameter exists
+    if (isset($_GET['help'])) {
+        $help = true;
+    }
     if (isset($_GET['echo'])) {
         $echoOn = true;
-    }
-    if (isset($_GET['img'])) {
-        $imgOn = true;
     }
     if (isset($_GET['info'])) {
         $info = true;
@@ -49,21 +58,45 @@ if (count($_GET) > 0) {
     }
     if (isset($_GET['height'])) {
         $height = intval($_GET['height']);
-    }    
+    }
+    if (isset($_GET['log'])) {
+        $loggingLevel = intval($_GET['log']);
+    }
 }
 
-if ($info) {
-    $echoOn = true;
-    $imgOn = true;
+if ($help) {
+    echo $webPageStart;
+    echo '<h2>Help</h2>';
+    echo '<p>Use the following GET parameters to control the script:</p>';
+    echo '<ul>';
+    echo '<li><strong>info</strong>: Show detailed information about processing steps, overrides log</li>';
+    echo '<li><strong>source</strong>: Select image source (0, 1, 2, ...).</li>';
+    echo '<li><strong>width</strong>: Desired width of the output image.</li>';
+    echo '<li><strong>height</strong>: Desired height of the output image.</li>';
+    echo '<li><strong>log</strong>: Set logging level (none, console, page, both).</li>';
+    echo '</ul>';
+    echo '<p>Examples of usage:</p>';
+    echo '<ul>';
+    echo '<li><code>https://&lt;address&gt;</code></li>';
+    echo '<li><code>https://&lt;address&gt;/index.php</code></li>';
+    echo '<li><code>?info&width=200</code></li>';
+    echo '<li><code>?source=1&width=300&height=120&log=both</code></li>';
+    echo '</ul>';
+    echo $webPageEnd;
+    exit;
 }
+
+
+if ($info)
+    $loggingLevel = "both";
 
 if ($info) echo $webPageStart;
 
-logmsg("Info is " . ($info ? 'ON' : 'OFF'));    
-logmsg("Echo is " . ($echoOn ? 'ON' : 'OFF'));
-logmsg("Image display is " . ($imgOn ? 'ON' : 'OFF'));  
-logmsg("width is " . $width);
-logmsg("height is " . $height);
+logcon("Info is " . ($info ? 'ON' : 'OFF'));    
+logcon("width is " . $width);
+logcon("height is " . $height);
+logcon("source is " . $source);
+logcon("loggingLevel is " . $loggingLevel);
 
 // Enhanced image download function with better redirect handling
 function downloadImageWithRedirects($url, $maxRedirects = 10, $timeout = 30) {
@@ -233,89 +266,91 @@ $selectedSource = isset($_GET['source']) ? $_GET['source'] : '0';
 $suffix = '';
 
 if ($selectedSource == '0') {
-    logmsg('>>> Selecting suffix...');
+    logcon('>>> Selecting suffix...');
     // Build URL with specific dimensions for picsum.photos
     if (($height > -1 && $width > -1) && ($height == $width)) {
-       logmsg(('>>>>> (1)'));
+       logcon(('>>>>> (1)'));
        $suffix = $width;
     } else if ($width > -1 && $height == -1) {
-        logmsg(('>>>>> ( 2)'));
+        logcon(('>>>>> ( 2)'));
         $height = $width;
         $suffix = $width;
     } else if ($height > -1 && $width > -1) {
-        logmsg(('>>>>> (3)'));
+        logcon(('>>>>> (3)'));
         $suffix = $width . '/' . $height;
     } else if ($height == -1 && $width == -1) {
-        logmsg(('>>>>> (4)'));
+        logcon(('>>>>> (4)'));
+        $width = DEFAULT_WIDTH;
+        $height = DEFAULT_HEIGHT;
         $suffix = '128'; // Default size
     }
     else {
-        logmsg(('>>>>> (5)'));
+        logcon(('>>>>> (5)'));
     }
     $imageUrl = $imageSources['0'] . $suffix; // Request a specific size
 } else {
     $imageUrl = isset($imageSources[$selectedSource]) ? $imageSources[$selectedSource] : $imageSources['0'];
 }
 
-logmsg(' ----- ');
-logmsg("suffix set to: " . $suffix);
-logmsg("Selected source: " . $selectedSource);
-logmsg("Image URL: " . $imageUrl);
+logcon(' ----- ');
+logcon("suffix set to: " . $suffix);
+logcon("Selected source: " . $selectedSource);
+logcon("Image URL: " . $imageUrl);
 
 //$imageUrl = isset($imageSources[$selectedSource]) ? $imageSources[$selectedSource] : $imageSources['0'];
 
-if ($echoOn) echo "<p>Using image source: <strong>$selectedSource</strong></p>";
-if ($echoOn) echo "<p>Image URL: <strong>$imageUrl</strong></p>";
+logpage("Using image source: <strong>$selectedSource</strong>");
+logpage("Image URL: <strong>$imageUrl</strong>");
 
 // Download image using enhanced function
 $downloadResult = downloadImageWithRedirects($imageUrl, 10, 30);
 
 if ($downloadResult['success']) {
     $imageData = $downloadResult['data'];
-   
-    if ($echoOn) echo '<p>Image downloaded successfully!</p>';
-    if ($echoOn) echo '<p>Final URL: ' . $downloadResult['final_url'] . '</p>';
-    if ($echoOn) echo '<p>Redirects: ' . $downloadResult['redirect_count'] . '</p>';
-    if ($echoOn) echo '<p>Download time: ' . round($downloadResult['total_time'], 2) . 's</p>';
-    if ($echoOn) echo '<p>Original image size: ' . strlen($imageData) . ' bytes</p>';
-   
+
+    logpage('Image downloaded successfully!');
+    logpage('Final URL: ' . $downloadResult['final_url']);
+    logpage('Redirects: ' . $downloadResult['redirect_count']);
+    logpage('Download time: ' . round($downloadResult['total_time'], 2) . 's');
+    logpage('Original image size: ' . strlen($imageData) . ' bytes');
+
     // Standardize the original image
     $standardizedImage = standardizeJpeg($imageData, 90);
-    if ($echoOn) echo '<p>Standardized image size: ' . strlen($standardizedImage) . ' bytes</p>';
-   
+    logpage('Standardized image size: ' . strlen($standardizedImage) . ' bytes');
+
     // Display original image
     $base64Original = base64_encode($imageData);
-    if ($echoOn) echo '<h3>Original Image:</h3>';
-    if ($imgOn) echo '<img src="data:image/jpeg;base64,' . $base64Original . '" style="max-width: 300px;" alt="Original Image">';
+    logpage('<h3>Original Image:</h3>');
+    if ($info) echo '<img src="data:image/jpeg;base64,' . $base64Original . '" style="max-width: 300px;" alt="Original Image">';
    
     // Display standardized image
     $base64Standardized = base64_encode($standardizedImage);
-    if ($echoOn) echo '<h3>Standardized Image (Baseline JPEG, 24-bit):</h3>';
-    if ($imgOn) echo '<img src="data:image/jpeg;base64,' . $base64Standardized . '" style="max-width: 300px;" alt="Standardized Image">';
+    logpage('<h3>Standardized Image (Baseline JPEG, 24-bit):</h3>');
+    if ($info) echo '<img src="data:image/jpeg;base64,' . $base64Standardized . '" style="max-width: 300px;" alt="Standardized Image">';
    
     // Resize image based on provided width and height (default 128x128)
     $resizedImage = resizeImageWithCrop($imageData, $width, $height, 100);
     if ($resizedImage) {
-        if ($echoOn) echo '<h3>Resized Image (' . $width . 'x' . $height . '):</h3>';
+        logpage('<h3>Resized Image (' . $width . 'x' . $height . '):</h3>');
         $base64Resized4 = base64_encode($resizedImage);
-        if ($imgOn) echo '<img src="data:image/jpeg;base64,' . $base64Resized4 . '" alt="Resized Image" style="max-width: 300px;">';
-        if ($echoOn) echo '<p>Resized image size: ' . strlen($resizedImage) . ' bytes</p>';
+        if ($info) echo '<img src="data:image/jpeg;base64,' . $base64Resized4 . '" alt="Resized Image" style="max-width: 300px;">';
+        logpage('Resized image size: ' . strlen($resizedImage) . ' bytes');
     }
 
-    if ($echoOn) {        
-        echo '<h3>Base64 Resized Image Data (' . $width . 'x' . $height . '):</h3>';
-        echo '<textarea style="width:100%; height:200px;">' . $base64Resized4 . '</textarea>';
-    }    
+    logpage('<h3>Base64 Resized Image Data (' . $width . 'x' . $height . '):</h3>');
+    logpage('<textarea style="width:100%; height:200px;">' . $base64Resized4 . '</textarea>');
+
 
     if (!$info) {
+        logpage('--- Outputting only the resized image data ---', 2);
         // Output only the last resized image data
         echo $base64Resized4;
     }  
    
 } else {
-    if ($echoOn) echo '<p>Failed to download image! HTTP Code: ' . $downloadResult['http_code'] . '</p>';
-    if ($echoOn) echo '<p>Final URL: ' . $downloadResult['final_url'] . '</p>';
-    if ($echoOn) echo '<p>Redirects: ' . $downloadResult['redirect_count'] . '</p>';
+    logpage('Failed to download image! HTTP Code: ' . $downloadResult['http_code']);
+    logpage('Final URL: ' . $downloadResult['final_url']);
+    logpage('Redirects: ' . $downloadResult['redirect_count']);
 }
 
 if ($info) echo $webPageEnd;
