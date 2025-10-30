@@ -176,6 +176,24 @@ function standardizeJpeg($imageData, $quality = 90) {
         $width, $height, $width, $height
     );
    
+    // Invert colors
+    for ($x = 0; $x < $width; $x++) {
+        for ($y = 0; $y < $height; $y++) {
+            $rgb = imagecolorat($standardImage, $x, $y);
+            $r = ($rgb >> 16) & 0xFF;
+            $g = ($rgb >> 8) & 0xFF;
+            $b = $rgb & 0xFF;
+            
+            // Invert each color channel
+            $invertedR = 255 - $r;
+            $invertedG = 255 - $g;
+            $invertedB = 255 - $b;
+            
+            $invertedColor = imagecolorallocate($standardImage, $invertedR, $invertedG, $invertedB);
+            imagesetpixel($standardImage, $x, $y, $invertedColor);
+        }
+    }
+   
     // Output as standard baseline JPEG
     ob_start();
     imagejpeg($standardImage, null, $quality);
