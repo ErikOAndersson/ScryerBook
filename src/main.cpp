@@ -1,5 +1,5 @@
 #include <TFT_eSPI.h>                                            
-
+#include "beach.h"
 
 void drawSpots();
 void Blip(int blips);
@@ -75,8 +75,7 @@ void setup() {
 void loop() {
   Serial.print(count);
   Serial.print(", ");
-  Blip(1);
-  delay(1000);
+  //Blip(1);
 
   // Draw a line diagonally across the screen
    tft.drawLine(0, 0, tft.width(), tft.height(), TFT_GREEN);
@@ -86,6 +85,10 @@ void loop() {
   if (count > 9999){
     count = 0;
   } 
+
+  drawSpots();
+
+  delay(5000);
 
 }
 
