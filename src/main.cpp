@@ -1,13 +1,24 @@
+#include "main.h"
+#include "webserver.h"
 #include <TFT_eSPI.h>
 #include <JPEGDecoder.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <ArduinoHttpClient.h>
 #include <Preferences.h>
+#include "FS.h"
+#include "LittleFS.h"
 //#include "beach.h"
 #include "wifi_credentials.h"
+#include <math.h>
+//#include "face1.h"
+//#include "static1.h"
+
 
 #define min(a,b)     (((a) < (b)) ? (a) : (b))
+
+// Move this to main.h later
+void loadImageToSpriteFromLittleFS(TFT_eSprite &spr, const char* filename, int xpos, int ypos);
 
 // Preferences for storing settings
 Preferences preferences;
@@ -31,6 +42,7 @@ String imageServerAddress = "witty-cliff-e5fe8cff64ae48afb25807a538c2dad2.azurew
 int imageServerPort = 443;  // HTTPS port
 String imageServerPath = "/?width=240&height=320&rotate=90";
 bool useStaticImage = false;
+bool useClockMode = false;
 
 // Create HTTPS client
 HttpClient client = HttpClient(wifi, imageServerAddress.c_str(), imageServerPort);
@@ -39,24 +51,14 @@ HttpClient client = HttpClient(wifi, imageServerAddress.c_str(), imageServerPort
 unsigned long lastFetchTime = 0;
 unsigned long fetchInterval = 20000; // 20 seconds (default)
 
-// Function declarations
-void drawSpots();
-void Blip(int blips);
-void drawJpegFromBase64(const char* base64String, int xpos, int ypos);
-void renderJPEG(int xpos, int ypos);
-size_t base64Decode(const char* input, uint8_t* output, size_t outputSize);
-void connectWiFi();
-void fetchAndDisplayImage();
-void loadSettings();
-void saveSettings();
-void handleWebServer();
-String urlDecode(String str);
-unsigned char h2int(char c);
-
-
+// TFT instance
 TFT_eSPI tft = TFT_eSPI();  
 
- // do not forget User_Setup_xxxx.h matching microcontroller-display combination
+// Sprite stuff for the clock face, and other vars
+TFT_eSprite sprite = TFT_eSprite(&tft); // Create a sprite instance
+struct tm timeinfo;
+
+// do not forget User_Setup_xxxx.h matching microcontroller-display combination
  // my own: "/include/User_Setup.h"
 
 #define PIN_LED 21
@@ -65,8 +67,11 @@ int delayTime = 500;
 int j,t;
 int count = 0;
 
+// Clock stuff
+
+
 // colors are:       bordeaux-africa - green - blue  - red  - yellow -bordeaux- africa - green - blue  - red  - yellow -bordeaux in hex, see defines above
-int color [13] = {  0xA000, 0xAB21, 0x07E0, 0x001F, 0xF800, 0xFFE0,  0xA000,  0xAB21,  0x07E0, 0x001F, 0xF800, 0xFFE0, 0xA000};
+//int color [13] = {  0xA000, 0xAB21, 0x07E0, 0x001F, 0xF800, 0xFFE0,  0xA000,  0xAB21,  0x07E0, 0x001F, 0xF800, 0xFFE0, 0xA000};
 
 //const char beach_b64[] PROGMEM = "";
 
@@ -79,7 +84,10 @@ void setup() {
   Serial.begin (9600);
   delay(1000);  // Give serial time to initialize
 
+  Serial.println("=== ScryerBook Starting ===");
+
   // Load saved settings from preferences
+  Serial.println("Loading settings...");
   loadSettings();
 
   Serial.println("Initializing TFT...");
@@ -91,6 +99,9 @@ void setup() {
   
   delay(100);  // Let pins stabilize
 
+
+
+
   // Connect to WiFI with static IP
   connectWiFi();
   
@@ -99,12 +110,35 @@ void setup() {
   Serial.println("Web server started");
   Serial.print("Access settings at: http://");
   Serial.println(WiFi.localIP());
+
+  // Initialize LittleFS AFTER WiFi and TFT
+  Serial.println("Mounting LittleFS...");
+  if (!LittleFS.begin(false)) {  // false = don't format on failure
+    Serial.println("LittleFS Mount Failed!");
+  } else {
+    Serial.println("LittleFS Mounted Successfully");
+    // List files in LittleFS for debugging
+    File root = LittleFS.open("/");
+    if (root) {
+      File file = root.openNextFile();
+      Serial.println("Files in LittleFS:");
+      while (file) {
+        Serial.print("  ");
+        Serial.print(file.name());
+        Serial.print(" - ");
+        Serial.print(file.size());
+        Serial.println(" bytes");
+        file = root.openNextFile();
+      }
+    }
+  }
   
   // Configure WiFiClientSecure to skip certificate validation (for development)
   // For production, you should use proper certificate validation
   wifi.setInsecure();
 
   tft.begin();
+  tft.setPivot(TFT_WIDTH / 2, TFT_HEIGHT / 2); // Set TFT pivot to center for pushRotated()
   Serial.println("TFT initialized successfully!");
   //tft.fillScreen (BLACK);
   Serial.println ();                                 // cut gibberish in Serial Monitor
@@ -114,9 +148,44 @@ void setup() {
   //Serial.println ();
   // tft.drawCircle (120,120,80,SCOPE);
   tft.fillScreen(TFT_BLACK);
-  j=12; 
 
-  Serial.println ("Starting up...");
+  // Init the full-screen sprite for background + clock
+  sprite.createSprite(SPRITE_WIDTH, SPRITE_HEIGHT); // Create full screen sprite (320x240)
+  sprite.setPivot(SPRITE_WIDTH/2, SPRITE_HEIGHT/2); // Set pivot point to center of sprite for rotation
+  sprite.setColorDepth(16); // Set color depth to 16 bits for better color quality
+  sprite.fillSprite(TFT_BLACK); // Fill with black initially
+  sprite.setSwapBytes(true); // Ensure correct byte order for pushRotated
+  // Populate the timeinfo struct with the time 10:15:30 for testing
+  timeinfo.tm_hour = 11;
+  timeinfo.tm_min = 55;
+  timeinfo.tm_sec = 30;
+
+
+  if (true) {
+    // Initialize LittleFS
+    Serial.println("Mounting LittleFS...");
+    if (!LittleFS.begin()) {
+      Serial.println("An error has occurred while mounting LittleFS");
+    } else {
+      Serial.println("LittleFS mounted successfully");
+    }
+
+
+    // Get file list and print names to serial
+    // Serial.println("Files in LittleFS:");
+    // File root = LittleFS.open("/");
+    // File file = root.openNextFile();
+    // while (file) {
+    //   Serial.print("  ");
+    //   Serial.print(file.name());
+    //   Serial.print(" - ");
+    //   Serial.print(file.size());
+    //   Serial.println(" bytes");
+    //   file = root.openNextFile();
+    // }
+  }
+
+
   
   // Example: Display JPEG from Base64 string
   // Uncomment to test with your Base64-encoded JPEG
@@ -129,23 +198,51 @@ void setup() {
   tft.fillScreen(TFT_BLACK);
 
   //http://witty-cliff-e5fe8cff64ae48afb25807a538c2dad2.azurewebsites.net/?width=320&height=240&info&rotate=90
+
+  Serial.println ("Starting up...");
+
 }
 
 void loop() {
   // Handle web server requests
   handleWebServer();
-  
+
+  if (useClockMode) {
+    // Call DrawClockFace every second and right at startup
+    static unsigned long lastClockFaceTime = 0;
+    unsigned long currentMillis = millis();
+
+    if (currentMillis - lastClockFaceTime >= 1000) {
+      //DrawClockFace();
+      UpdateClockFace();
+      lastClockFaceTime = currentMillis;
+    }
+  }
+
+  if (useStaticImage) {
+    // Static image mode - load and display static1.h file once
+    static bool imageDisplayed = false;
+    if (!imageDisplayed) {
+      Serial.println("Displaying static image...");
+      loadImageToSpriteFromLittleFS(sprite, "/static1.rgb565", 0, 0);
+      sprite.pushRotated(90);
+      Serial.println("Static image displayed.");
+      imageDisplayed = true;
+    }
+  }
+
+
   // Check if it's time to fetch a new image (if not using static image)
-  if (!useStaticImage) {
+  if (!useStaticImage && !useClockMode) {
     unsigned long currentTime = millis();
     
     if (currentTime - lastFetchTime >= fetchInterval) {
-      //fetchAndDisplayImage();
+      fetchAndDisplayImage();
       // While developing, just write some text instead of fetching image
-      tft.setTextColor(TFT_YELLOW, TFT_PINK);
-      tft.setTextSize(2); 
-      tft.setCursor(10, 10);
-      tft.println("Dev mode...");
+      // tft.setTextColor(TFT_YELLOW);
+      // tft.setTextSize(2);
+      // tft.setCursor(10, 10);
+      // tft.println("Dev mode...");
       lastFetchTime = currentTime;
     }
   }
@@ -164,17 +261,6 @@ void loop() {
   // Small delay to prevent tight loop
   delay(100);
 }
-
-
-void drawSpots(){
- 
-   tft.fillCircle (120,  40, 8, color [j]); 
-   tft.fillCircle (190,  80, 8, color [j-1]);  
-   tft.fillCircle (190, 160, 8, color [j-2]);  
-   tft.fillCircle (120, 200, 8, color [j-3]);   
-   tft.fillCircle ( 50, 160, 8, color [j-4]); 
-   tft.fillCircle ( 50,  80, 8, color [j-5]);                         
- }
 
 void Blip(int blips){
   for (int i = 0; i < blips; i++) {
@@ -222,6 +308,47 @@ size_t base64Decode(const char* input, uint8_t* output, size_t outputSize) {
   }
   
   return outputLen;
+}
+
+// Draw RGB565 image array to display
+// imageData: pointer to RGB565 array (uint16_t)
+// width, height: dimensions of the image
+// xpos, ypos: position on screen
+void drawRGB565Image(const uint16_t* imageData, int width, int height, int xpos, int ypos) {
+  if (imageData == NULL) {
+    Serial.println("ERROR: NULL image data");
+    return;
+  }
+  
+  Serial.print("Drawing RGB565 image: ");
+  Serial.print(width);
+  Serial.print("x");
+  Serial.print(height);
+  Serial.print(" at (");
+  Serial.print(xpos);
+  Serial.print(", ");
+  Serial.print(ypos);
+  Serial.println(")");
+  
+  // Push the image directly to TFT (reads from PROGMEM if needed)
+  tft.pushImage(xpos, ypos, width, height, imageData);
+  
+  Serial.println("RGB565 image displayed successfully");
+}
+
+// Draw RGB565 image array to sprite
+// sprite: reference to sprite object
+// imageData: pointer to RGB565 array (uint16_t)
+// width, height: dimensions of the image
+// xpos, ypos: position within sprite
+void drawRGB565ImageToSprite(TFT_eSprite &spr, const uint16_t* imageData, int width, int height, int xpos, int ypos) {
+  if (imageData == NULL) {
+    Serial.println("ERROR: NULL image data");
+    return;
+  }
+  
+  // Push the image to sprite (reads from PROGMEM if needed)
+  spr.pushImage(xpos, ypos, width, height, imageData);
 }
 
 // Decode Base64 JPEG and display it
@@ -440,7 +567,11 @@ void loadSettings() {
   
   // Load static image setting
   useStaticImage = preferences.getBool("useStatic", false);
-  
+  useStaticImage = true; // Force static image mode for now, remember to change later!
+
+  // Load clock mode setting
+  useClockMode = preferences.getBool("useClockMode", false);
+
   preferences.end();
   
   Serial.println("Settings loaded from preferences");
@@ -456,216 +587,221 @@ void saveSettings() {
   preferences.putString("imagePath", imageServerPath);
   preferences.putULong("fetchInterval", fetchInterval);
   preferences.putBool("useStatic", useStaticImage);
+  preferences.putBool("useClockMode", useClockMode);
   
   preferences.end();
   
   Serial.println("Settings saved to preferences");
 }
 
-// URL decode helper function
-String urlDecode(String str) {
-  String decoded = "";
-  char c;
-  char code0;
-  char code1;
-  for (unsigned int i = 0; i < str.length(); i++) {
-    c = str.charAt(i);
-    if (c == '+') {
-      decoded += ' ';
-    } else if (c == '%') {
-      i++;
-      code0 = str.charAt(i);
-      i++;
-      code1 = str.charAt(i);
-      c = (h2int(code0) << 4) | h2int(code1);
-      decoded += c;
-    } else {
-      decoded += c;
-    }
-  }
-  return decoded;
+void DrawClockFace() {
+  DrawClockFace(CLOCK_WIDTH / 2, CLOCK_HEIGHT / 2, (CLOCK_WIDTH / 2) * CLOCK_SCALE);
 }
 
-// Helper for URL decode
-unsigned char h2int(char c) {
-  if (c >= '0' && c <= '9') {
-    return((unsigned char)c - '0');
-  }
-  if (c >= 'a' && c <= 'f') {
-    return((unsigned char)c - 'a' + 10);
-  }
-  if (c >= 'A' && c <= 'F') {
-    return((unsigned char)c - 'A' + 10);
-  }
-  return(0);
-}
+// void UpdateClockFace() {
+//   UpdateClockFace(CLOCK_SCALE);
+// }
 
-// Handle web server requests
-void handleWebServer() {
-  WiFiClient webClient = webServer.available();
+void DrawClockFace(int xpos, int ypos, float scale) {
+  // Draw clock face on sprite (sprite should already be cleared/filled by caller)
+  sprite.setTextColor(TFT_WHITE); // White text
+  const float indlen = 0.9;
+  // Scale text size proportionally
+  sprite.setTextSize(max(1, (int)(2 * CLOCK_SCALE)));
   
-  if (webClient) {
-    Serial.println("New web client");
-    String currentLine = "";
-    String request = "";
-    bool isPost = false;
-    String postData = "";
-    
-    while (webClient.connected()) {
-      if (webClient.available()) {
-        char c = webClient.read();
-        request += c;
-        
-        if (c == '\n') {
-          if (currentLine.length() == 0) {
-            // End of headers, check if POST
-            if (isPost && postData.length() == 0) {
-              // Read POST data
-              while (webClient.available()) {
-                postData += (char)webClient.read();
-              }
-              
-              // Parse POST data and update settings
-              if (postData.length() > 0) {
-                // Parse form data
-                int idx;
-                
-                // WiFi SSID
-                idx = postData.indexOf("wifiSSID=");
-                if (idx >= 0) {
-                  int endIdx = postData.indexOf("&", idx);
-                  if (endIdx < 0) endIdx = postData.length();
-                  wifiSSID = urlDecode(postData.substring(idx + 9, endIdx));
-                }
-                
-                // WiFi Password
-                idx = postData.indexOf("wifiPassword=");
-                if (idx >= 0) {
-                  int endIdx = postData.indexOf("&", idx);
-                  if (endIdx < 0) endIdx = postData.length();
-                  wifiPassword = urlDecode(postData.substring(idx + 13, endIdx));
-                }
-                
-                // Image Server
-                idx = postData.indexOf("imageServer=");
-                if (idx >= 0) {
-                  int endIdx = postData.indexOf("&", idx);
-                  if (endIdx < 0) endIdx = postData.length();
-                  imageServerAddress = urlDecode(postData.substring(idx + 12, endIdx));
-                }
-                
-                // Image Path
-                idx = postData.indexOf("imagePath=");
-                if (idx >= 0) {
-                  int endIdx = postData.indexOf("&", idx);
-                  if (endIdx < 0) endIdx = postData.length();
-                  imageServerPath = urlDecode(postData.substring(idx + 10, endIdx));
-                }
-                
-                // Fetch Interval
-                idx = postData.indexOf("fetchInterval=");
-                if (idx >= 0) {
-                  int endIdx = postData.indexOf("&", idx);
-                  if (endIdx < 0) endIdx = postData.length();
-                  String intervalStr = postData.substring(idx + 14, endIdx);
-                  fetchInterval = intervalStr.toInt() * 1000; // Convert seconds to milliseconds
-                }
-                
-                // Static Image checkbox
-                useStaticImage = (postData.indexOf("useStatic=on") >= 0);
-                
-                // Save settings
-                saveSettings();
-                
-                // Send success response
-                webClient.println("HTTP/1.1 200 OK");
-                webClient.println("Content-Type: text/html");
-                webClient.println("Connection: close");
-                webClient.println();
-                webClient.println("<!DOCTYPE HTML><html><head><meta charset='UTF-8'><title>Settings Saved</title></head>");
-                webClient.println("<body><h1>Settings Saved!</h1>");
-                webClient.println("<p>Your settings have been saved successfully.</p>");
-                webClient.println("<p><a href='/'>Back to Settings</a></p>");
-                webClient.println("<p><em>Note: WiFi changes require a restart to take effect.</em></p>");
-                webClient.println("</body></html>");
-                break;
-              }
-            }
-            
-            // Send HTML form (GET request)
-            webClient.println("HTTP/1.1 200 OK");
-            webClient.println("Content-Type: text/html");
-            webClient.println("Connection: close");
-            webClient.println();
-            
-            // HTML form
-            webClient.println("<!DOCTYPE HTML><html><head><meta charset='UTF-8'><title>ScryerBook Settings</title>");
-            webClient.println("<style>");
-            webClient.println("body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; background: #f0f0f0; }");
-            webClient.println("h1 { color: #333; }");
-            webClient.println("form { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }");
-            webClient.println("label { display: block; margin-top: 15px; font-weight: bold; color: #555; }");
-            webClient.println("input[type='text'], input[type='password'], input[type='number'] { width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }");
-            webClient.println("input[type='checkbox'] { margin-top: 10px; }");
-            webClient.println("input[type='submit'] { background: #4CAF50; color: white; padding: 12px 30px; border: none; border-radius: 4px; cursor: pointer; margin-top: 20px; font-size: 16px; }");
-            webClient.println("input[type='submit']:hover { background: #45a049; }");
-            webClient.println(".info { background: #e7f3fe; padding: 10px; border-left: 4px solid #2196F3; margin: 20px 0; }");
-            webClient.println("</style></head><body>");
-            webClient.println("<h1>ScryerBook Settings</h1>");
-            webClient.println("<div class='info'>Static IP: 192.168.1.61</div>");
-            webClient.println("<form method='POST' action='/'>");
-            
-            webClient.println("<label>WiFi SSID:</label>");
-            webClient.print("<input type='text' name='wifiSSID' value='");
-            webClient.print(wifiSSID);
-            webClient.println("'>");
-            
-            webClient.println("<label>WiFi Password:</label>");
-            webClient.print("<input type='password' name='wifiPassword' value='");
-            webClient.print(wifiPassword);
-            webClient.println("'>");
-            
-            webClient.println("<label>Image Server Address:</label>");
-            webClient.print("<input type='text' name='imageServer' value='");
-            webClient.print(imageServerAddress);
-            webClient.println("'>");
-            
-            webClient.println("<label>Image settings:</label>");
-            webClient.print("<input type='text' name='imagePath' value='");
-            webClient.print(imageServerPath);
-            webClient.println("'>");
-            
-            webClient.println("<label>Fetch Interval (seconds):</label>");
-            webClient.print("<input type='number' name='fetchInterval' value='");
-            webClient.print(fetchInterval / 1000);
-            webClient.println("' min='1'>");
-            
-            webClient.println("<label>");
-            webClient.print("<input type='checkbox' name='useStatic'");
-            if (useStaticImage) webClient.print(" checked");
-            webClient.println("> Use Static Image (don't fetch from server)</label>");
-            
-            webClient.println("<input type='submit' value='Save Settings'>");
-            webClient.println("</form></body></html>");
-            
-            break;
-          } else {
-            // Check for POST request
-            if (currentLine.startsWith("POST")) {
-              isPost = true;
-            }
-            currentLine = "";
-          }
-        } else if (c != '\r') {
-          currentLine += c;
-        }
+  for (int i = 0; i < 12; i++) {
+      const float angle = (i / 12.0) * 2 * 3.1416 - 3.1416 / 2;
+      const int x = xpos + cos(angle) * scale;
+      const int y = ypos + sin(angle) * scale;
+
+      //sprite.drawString(String(i == 0 ? 12 : i), x, y);
+      // Translate i to roman numeral
+      String romanNumeral;
+      switch (i) {
+        case 0: romanNumeral = "XII"; break;
+        case 1: romanNumeral = "I"; break;
+        case 2: romanNumeral = "II"; break;
+        case 3: romanNumeral = "III"; break;
+        case 4: romanNumeral = "IV"; break;
+        case 5: romanNumeral = "V"; break;
+        case 6: romanNumeral = "VI"; break;
+        case 7: romanNumeral = "VII"; break;
+        case 8: romanNumeral = "VIII"; break;
+        case 9: romanNumeral = "IX"; break;
+        case 10: romanNumeral = "X"; break;
+        case 11: romanNumeral = "XI"; break;
       }
-    }
-    
-    delay(1);
-    webClient.stop();
-    Serial.println("Web client disconnected");
-  }
+      sprite.drawString(romanNumeral, x, y);
+
+
+      const int ix = xpos + cos(angle) * scale * indlen;
+      const int iy = ypos + sin(angle) * scale * indlen;
+      //sprite.drawLine(xpos + cos(angle) * (scale - ix), ypos + sin(angle) * (scale - iy), x, y, TFT_LIGHTGREY);
+      // Scale line widths proportionally
+      if (i % 3 == 0)
+        sprite.drawWideLine(x, y, ix, iy, max(1, (int)(3 * CLOCK_SCALE)), TFT_LIGHTGREY);
+      else  
+        sprite.drawLine(x, y, ix, iy, TFT_LIGHTGREY);
+  } 
 }
 
+void UpdateClockFace() {
+  // Get current time
+  // struct tm timeinfo;
+  // if (!getLocalTime(&timeinfo)) {
+  //   Serial.println("Failed to obtain time");
+  //   return;
+  // }
 
+  timeinfo.tm_sec += 1;
+
+  int hours = timeinfo.tm_hour;
+  int minutes = timeinfo.tm_min;
+  int seconds = timeinfo.tm_sec;
+
+  // Calculate angles
+  float secondAngle = (seconds / 60.0) * 2 * 3.1416 - 3.1416 / 2;
+  float minuteAngle = (minutes / 60.0) * 2 * 3.1416 - 3.1416 / 2 + (secondAngle + 3.1416 / 2) / 60.0;
+  float hourAngle = ((hours % 12) / 12.0) * 2 * 3.1416 - 3.1416 / 2 + (minuteAngle + 3.1416 / 2) / 12.0;
+
+  // Clear sprite with black background (this is where you'd draw your background image)
+  sprite.fillSprite(TFT_BLACK);
+  
+  // TODO: Draw background image here
+  // Example: sprite.pushImage(0, 0, SPRITE_WIDTH, SPRITE_HEIGHT, backgroundImageData);
+  //sprite.pushImage(0, 0, 320, 240, face1_img);
+
+  // Calculate clock position in full-screen sprite (centered)
+  int clockCenterX = SPRITE_WIDTH / 2;
+  int clockCenterY = SPRITE_HEIGHT / 2;
+  // Apply scale to clock radius
+  float clockRadius = (CLOCK_WIDTH / 2) * CLOCK_SCALE;
+
+  // Draw clock face (numbers and hour markers)
+  DrawClockFace(clockCenterX, clockCenterY, clockRadius);
+
+  // Draw hour hand on sprite (scaled)
+  int hourX = clockCenterX + cos(hourAngle) * (clockRadius * 0.5);
+  int hourY = clockCenterY + sin(hourAngle) * (clockRadius * 0.5);
+  sprite.drawWideLine(clockCenterX, clockCenterY, hourX, hourY, max(1, (int)(5 * CLOCK_SCALE)), TFT_WHITE);
+
+  // Draw minute hand on sprite (scaled)
+  int minuteX = clockCenterX + cos(minuteAngle) * (clockRadius * 0.7);
+  int minuteY = clockCenterY + sin(minuteAngle) * (clockRadius * 0.7);
+  sprite.drawWideLine(clockCenterX, clockCenterY, minuteX, minuteY, max(1, (int)(3 * CLOCK_SCALE)), TFT_WHITE);
+
+  // Draw second hand on sprite (scaled)
+  int secondX = clockCenterX + cos(secondAngle) * (clockRadius * 0.9);
+  int secondY = clockCenterY + sin(secondAngle) * (clockRadius * 0.9);
+  sprite.drawLine(clockCenterX, clockCenterY, secondX, secondY, TFT_RED);
+
+  // Push the entire full-screen sprite to display with 90° rotation
+  //tft.setPivot(TFT_WIDTH / 2, TFT_HEIGHT / 2); // Set pivot to center of display
+  sprite.pushRotated(90); // Rotate 90 degrees clockwise - no transparency needed now
+}
+
+// Load RGB565 image from LittleFS and display on TFT
+void loadImageFromLittleFS(const char* filename, int xpos, int ypos) {
+  Serial.print("Loading image from LittleFS: ");
+  Serial.println(filename);
+  
+  File file = LittleFS.open(filename, "r");
+  if (!file) {
+    Serial.println("Failed to open image file");
+    return;
+  }
+  
+  size_t fileSize = file.size();
+  Serial.print("File size: ");
+  Serial.print(fileSize);
+  Serial.println(" bytes");
+  
+  // Allocate buffer for image data
+  uint16_t* buffer = (uint16_t*)malloc(fileSize);
+  if (!buffer) {
+    Serial.println("Failed to allocate memory for image");
+    file.close();
+    return;
+  }
+  
+  // Read file into buffer
+  size_t bytesRead = file.read((uint8_t*)buffer, fileSize);
+  file.close();
+  
+  if (bytesRead != fileSize) {
+    Serial.println("Failed to read complete file");
+    free(buffer);
+    return;
+  }
+  
+  // Calculate dimensions (assuming 320x240 or derive from fileSize)
+  int width = 320;
+  int height = fileSize / (width * 2);
+  
+  Serial.print("Image dimensions: ");
+  Serial.print(width);
+  Serial.print("x");
+  Serial.println(height);
+  
+  // Push image to display
+  tft.pushImage(xpos, ypos, width, height, buffer);
+  
+  free(buffer);
+  Serial.println("Image loaded successfully");
+}
+
+// Load RGB565 image from LittleFS and draw to sprite (line-by-line to save RAM)
+void loadImageToSpriteFromLittleFS(TFT_eSprite &spr, const char* filename, int xpos, int ypos) {
+  Serial.print("Loading image to sprite from LittleFS: ");
+  Serial.println(filename);
+  
+  File file = LittleFS.open(filename, "r");
+  if (!file) {
+    Serial.println("Failed to open image file");
+    return;
+  }
+  
+  size_t fileSize = file.size();
+  Serial.print("File size: ");
+  Serial.print(fileSize);
+  Serial.println(" bytes");
+  
+  // Calculate dimensions (assuming 320x240)
+  int width = 320;
+  int height = fileSize / (width * 2);
+  
+  Serial.print("Image dimensions: ");
+  Serial.print(width);
+  Serial.print("x");
+  Serial.println(height);
+  
+  // Allocate buffer for ONE line (640 bytes instead of 153600!)
+  uint16_t* lineBuffer = (uint16_t*)malloc(width * 2);
+  if (!lineBuffer) {
+    Serial.println("Failed to allocate line buffer");
+    file.close();
+    return;
+  }
+  
+  long totalBytesRead = 0;
+  // Read and push image line by line
+  for (int y = 0; y < height; y++) {
+    size_t bytesRead = file.read((uint8_t*)lineBuffer, width * 2);
+    if (bytesRead != width * 2) {
+      Serial.print("Failed to read line ");
+      Serial.println(y);
+      break;
+    }
+    // Push one line at a time to sprite
+    spr.pushImage(xpos, ypos + y, width, 1, lineBuffer);
+    totalBytesRead += bytesRead;
+  }
+  
+  Serial.print("Total bytes read: ");
+  Serial.println(totalBytesRead);
+  
+  
+  file.close();
+  free(lineBuffer);
+  Serial.println("Image loaded to sprite successfully");
+}
