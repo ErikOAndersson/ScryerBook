@@ -4,7 +4,7 @@
 #include <WiFiClientSecure.h>
 #include <ArduinoHttpClient.h>
 #include <Preferences.h>
-#include "beach.h"
+//#include "beach.h"
 #include "wifi_credentials.h"
 
 #define min(a,b)     (((a) < (b)) ? (a) : (b))
@@ -57,28 +57,9 @@ unsigned char h2int(char c);
 TFT_eSPI tft = TFT_eSPI();  
 
  // do not forget User_Setup_xxxx.h matching microcontroller-display combination
- // my own: <Setup_FW_ESP32C3DEV_ST7789.h>
-  
-#define SCOPE   0x3206                             // CRT scope glass color - CRT like luminescent 
+ // my own: "/include/User_Setup.h"
+
 #define PIN_LED 21
-
-
-// some other principal colors
-// RGB 565 color picker at https://ee-programming-notepad.blogspot.com/2016/10/16-bit-color-generator-picker.html
-// #define WHITE       0xFFFF
-// #define BLACK       0x0000
-// #define BLUE        0x001F
-// #define RED         0xF800
-// #define GREEN       0x07E0
-// #define CYAN        0x07FF
-// #define MAGENTA     0xF81F
-// #define YELLOW      0xFFE0
-// #define GREY        0x2108 
-// #define ORANGE      0xFBE0
-// #define TEXT_COLOR  0xFFFF                         // is currently white 
-// #define AFRICA      0xAB21
-// #define BORDEAUX    0xA000
-// #define VOLTMETER   0xF6D3     
 
 int delayTime = 500;
 int j,t;
@@ -170,6 +151,15 @@ void loop() {
   }
 
   //fetchAndDisplayImage();
+
+  // Print a dot to serial every other second or so
+  static unsigned long lastDotTime = 0;
+  unsigned long currentTime = millis();
+  if (currentTime - lastDotTime >= 2000) {
+    lastDotTime = currentTime;
+    Serial.print(".");
+  }
+
 
   // Small delay to prevent tight loop
   delay(100);
