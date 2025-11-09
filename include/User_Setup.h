@@ -9,6 +9,10 @@
 #define TFT_WIDTH  240
 #define TFT_HEIGHT 320
 
+// Color order - swap RED and BLUE
+#define TFT_RGB_ORDER TFT_BGR
+//#define TFT_RGB_ORDER TFT_RGB
+
 // EA Might be needed?
 //#define ST7789_2_INIT  // For some 320x240 displays
 //#define CGRAM_OFFSET   // If the display area is offset
@@ -44,3 +48,5 @@
 #define SPI_FREQUENCY  27000000  // 27MHz (safer than 40MHz)
 #define SPI_READ_FREQUENCY  16000000
 // #define SPI_TOUCH_FREQUENCY  2500000  // Not used
+
+#define SWAP_BYTES
