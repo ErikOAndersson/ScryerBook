@@ -6,6 +6,7 @@
 #include <WiFiClientSecure.h>
 #include <ArduinoHttpClient.h>
 #include <Preferences.h>
+#include <ArduinoJson.h>
 #include "FS.h"
 #include "LittleFS.h"
 //#include "beach.h"
@@ -13,12 +14,15 @@
 #include <math.h>
 //#include "face1.h"
 //#include "static1.h"
+#include "font_gilligan_10.h"
 
 
 #define min(a,b)     (((a) < (b)) ? (a) : (b))
 
-// Move this to main.h later
-void loadImageToSpriteFromLittleFS(TFT_eSprite &spr, const char* filename, int xpos, int ypos);
+// ToDo: Move this to main.h later
+void loadImageToSpriteFromLittleFS(TFT_eSprite &spr, const char* filename, int xpos, int ypos, int imageWidth = 320, int imageHeight = 0, uint16_t transparentColor = 0xFFFF);
+void drawWrappedText(TFT_eSprite &spr, const char* text, int x, int y, int maxWidth, int lineHeight);
+
 
 // Preferences for storing settings
 Preferences preferences;
@@ -48,8 +52,12 @@ bool useClockMode = false;
 HttpClient client = HttpClient(wifi, imageServerAddress.c_str(), imageServerPort);
 
 // Timing - can be changed via web interface
-unsigned long lastFetchTime = 0;
+unsigned long lastFetchTime = 99999999; // Force immediate fetch on startup
 unsigned long fetchInterval = 20000; // 20 seconds (default)
+// lastStatusUpdateTime >= statusUpdateInterval
+unsigned long lastStatusUpdateTime = 99999999; // Force immediate status update on startup
+unsigned long statusUpdateInterval = 5000; // 5 seconds (default)
+
 
 // TFT instance
 TFT_eSPI tft = TFT_eSPI();  
@@ -62,22 +70,30 @@ struct tm timeinfo;
  // my own: "/include/User_Setup.h"
 
 #define PIN_LED 21
+#define PIN_BTN1 8
+#define PIN_BTN2 9
+
 
 int delayTime = 500;
 int j,t;
 int count = 0;
 
-// Clock stuff
+// Set default startup Mode
+// ToDo: Make this a setting
+MODE _mode = QUOTE;
 
+// Temporary for testing, remove this
+const char tmp_quote[] = "I slept with faith and found a corpse in my arms on awakening I drank and danced all night with doubt and found her a virgin in the morning.";
 
-// colors are:       bordeaux-africa - green - blue  - red  - yellow -bordeaux- africa - green - blue  - red  - yellow -bordeaux in hex, see defines above
-//int color [13] = {  0xA000, 0xAB21, 0x07E0, 0x001F, 0xF800, 0xFFE0,  0xA000,  0xAB21,  0x07E0, 0x001F, 0xF800, 0xFFE0, 0xA000};
-
-//const char beach_b64[] PROGMEM = "";
-
+// ======================================================================
+// Setup function
+// ======================================================================
 void setup() {
+  // Initialize pins
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, LOW);
+  pinMode(PIN_BTN1, INPUT_PULLUP);
+  pinMode(PIN_BTN2, INPUT_PULLUP);
 
   Blip(10);
 
@@ -99,9 +115,8 @@ void setup() {
   
   delay(100);  // Let pins stabilize
 
-
-
-
+  // Disable WiFi for testing
+#if ENABLE_WIFI
   // Connect to WiFI with static IP
   connectWiFi();
   
@@ -136,6 +151,7 @@ void setup() {
   // Configure WiFiClientSecure to skip certificate validation (for development)
   // For production, you should use proper certificate validation
   wifi.setInsecure();
+#endif // ENABLE_WIFI
 
   tft.begin();
   tft.setPivot(TFT_WIDTH / 2, TFT_HEIGHT / 2); // Set TFT pivot to center for pushRotated()
@@ -169,20 +185,6 @@ void setup() {
     } else {
       Serial.println("LittleFS mounted successfully");
     }
-
-
-    // Get file list and print names to serial
-    // Serial.println("Files in LittleFS:");
-    // File root = LittleFS.open("/");
-    // File file = root.openNextFile();
-    // while (file) {
-    //   Serial.print("  ");
-    //   Serial.print(file.name());
-    //   Serial.print(" - ");
-    //   Serial.print(file.size());
-    //   Serial.println(" bytes");
-    //   file = root.openNextFile();
-    // }
   }
 
 
@@ -203,11 +205,93 @@ void setup() {
 
 }
 
+// ======================================================================
+// Main loop
+// ======================================================================
 void loop() {
   // Handle web server requests
+#if ENABLE_WIFI
   handleWebServer();
+#endif
 
-  if (useClockMode) {
+  // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+  // Testing LED and buttons
+/*
+  // Print button status to serial
+  char b1 = digitalRead(PIN_BTN1) == LOW ? '1' : '0';
+  char b2 = digitalRead(PIN_BTN2) == LOW ? '1' : '0';
+  Serial.print("Buttons: ");
+  Serial.print(b1);
+  Serial.print(b2);
+  Serial.println();
+
+  if (digitalRead(PIN_BTN1) == LOW) {
+    Blip(2);
+  }
+  if (digitalRead(PIN_BTN2) == LOW) {
+    Blip(3);
+  }
+  delay(100);
+  return;
+  */
+  // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+  if (_mode == STATUSINFO) {
+    // Status mode - display status info
+
+    unsigned long currentTime = millis();
+    if (currentTime - lastStatusUpdateTime >= statusUpdateInterval) {
+      lastStatusUpdateTime = currentTime;
+      displayStatusInfo();
+    }
+  }
+  if (_mode == QUOTE) {
+    // Quote mode - display a new quote every fetchInterval
+    unsigned long currentTime = millis();
+    
+    if (currentTime - lastFetchTime >= fetchInterval) {
+      // Get the return result from function GetNinjaQuote() - returns malloc'd memory!
+      //char *quote = GetNinjaQuote();
+      const char *quote = (char *)  tmp_quote; // Using temporary quote for testing
+
+      if (quote != nullptr) {
+        Serial.println("Displaying new quote:");
+        Serial.println(quote);
+//drawWrappedText(TFT_eSprite &spr, const char* text, int x, int y, int maxWidth, int lineHeight) {
+        drawWrappedText(sprite, quote, 20, 30, SPRITE_WIDTH - 40, 30);
+
+        // If this works I'll be surprised
+        //loadImageToSpriteFromLittleFS(sprite, "/fleuron.rgb565", 75, 210);
+        //loadImageToSpriteFromLittleFS(sprite, "/fleuron.rgb565", 75, 200, 120, 33);
+        //loadImageToSpriteFromLittleFS(sprite, "/fleuron.rgb565", 100, 210, 120, 33, 0xF81F);  // 0xF81F = #FF00FF = magenta transparency
+        // Load PNG-based image with transparency (magenta = transparent)
+        loadImageToSpriteFromLittleFS(sprite, "/fleuron.rgb565", 100, 200, 120, 33, 0xF81F);
+        
+        sprite.pushRotated(90);
+
+        // // Draw text on the sprite BEFORE rotating
+        // sprite.setFreeFont(&GilliganShutter10pt7b);  // Set the custom font on sprite
+        // sprite.setTextColor(TFT_WHITE, TFT_BLACK);   // White text, black background
+        // sprite.setTextDatum(MC_DATUM);               // Middle center alignment
+        // sprite.drawString(quote, SPRITE_WIDTH / 2, SPRITE_HEIGHT / 2);        
+        // // Now push the sprite with text rotated 90 degrees
+        // sprite.pushRotated(90);
+        
+
+
+        // Free the malloc'd memory if tmp_quote is defined
+        // REMOVE THIS comment, we should free  it
+        // free(quote);
+      } else {
+        Serial.println("Failed to get quote.");
+      }
+
+      lastFetchTime = currentTime;
+    }
+  }
+
+
+  if (_mode == CLOCK) {
     // Call DrawClockFace every second and right at startup
     static unsigned long lastClockFaceTime = 0;
     unsigned long currentMillis = millis();
@@ -219,21 +303,31 @@ void loop() {
     }
   }
 
-  if (useStaticImage) {
+  // useStaticImage
+  if (_mode == STATIC) {
     // Static image mode - load and display static1.h file once
     static bool imageDisplayed = false;
     if (!imageDisplayed) {
       Serial.println("Displaying static image...");
       loadImageToSpriteFromLittleFS(sprite, "/static1.rgb565", 0, 0);
+      
+      // Draw text on the sprite BEFORE rotating
+      sprite.setFreeFont(&GilliganShutter10pt7b);  // Set the custom font on sprite
+      sprite.setTextColor(TFT_WHITE, TFT_BLACK);   // White text, black background
+      sprite.setTextDatum(MC_DATUM);               // Middle center alignment
+      sprite.drawString("As long as you live...", SPRITE_WIDTH / 2, SPRITE_HEIGHT / 2);
+      
+      // Now push the sprite with text rotated 90 degrees
       sprite.pushRotated(90);
       Serial.println("Static image displayed.");
+      
       imageDisplayed = true;
     }
   }
 
 
   // Check if it's time to fetch a new image (if not using static image)
-  if (!useStaticImage && !useClockMode) {
+  if (_mode == FETCH) {
     unsigned long currentTime = millis();
     
     if (currentTime - lastFetchTime >= fetchInterval) {
@@ -258,9 +352,91 @@ void loop() {
   }
 
 
-  // Small delay to prevent tight loop
-  delay(100);
+  // Poll button for 200ms instead of simple delay
+  unsigned long buttonPollStart = millis();
+  while (millis() - buttonPollStart < 200) {
+    if (digitalRead(PIN_BTN1) == LOW) {
+      btn1Pressed();
+      // Wait for button release with timeout
+      unsigned long releaseWait = millis();
+      while (digitalRead(PIN_BTN1) == LOW && (millis() - releaseWait < 1000)) {
+        delay(10);
+      }
+      break; // Exit polling loop after handling press
+    }
+    delay(10); // Small delay between checks
+  }
 }
+
+void btn1Pressed() {
+  Serial.println("Button 1 pressed");
+
+  // Clear display
+  tft.fillScreen(TFT_BLACK);
+
+  byte lineHeight = 30;
+  // Draw menu: Fetch Image, Show Clock, Show Quote, Show Status
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(2);
+  tft.setCursor(20, lineHeight * 1);
+  tft.println("Menu:");
+  tft.setCursor(40, lineHeight * 2);
+  tft.println("1. Fetch Image");
+  tft.setCursor(40, lineHeight * 3);
+  tft.println("2. Show Clock");
+  tft.setCursor(40, lineHeight * 4);
+  tft.println("3. Show Quote");
+  tft.setCursor(40, lineHeight * 5  );
+  tft.println("4. Show Album");
+  tft.setCursor(40, lineHeight * 6  );
+  tft.println("5. Show Status");
+
+  byte position = 0;
+  while (true) {
+    // Highlight current selection
+    for (int i = 0; i < 5; i++) {
+      if (i == position) {
+        tft.setTextColor(TFT_DARKGREEN, TFT_GREENYELLOW);
+      } else {
+        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+      }
+      tft.setCursor(40, lineHeight * (i + 2));
+      switch (i) {
+        case 0: tft.println("1. Fetch Image"); break;
+        case 1: tft.println("2. Show Clock"); break;
+        case 2: tft.println("3. Show Quote"); break;
+        case 3: tft.println("4. Show Album"); break;
+        case 4: tft.println("5. Show Status"); break;
+      }
+    }
+
+    // Check for button press to move selection or select
+    if (digitalRead(PIN_BTN1) == LOW) {
+      // Move to next position
+      position = (position + 1) % 5;
+      // Wait for button release
+      while (digitalRead(PIN_BTN1) == LOW) {
+        delay(10);
+      }
+      delay(200); // Debounce delay
+    }
+
+    // Check for long press to select
+    unsigned long pressStart = millis();
+    while (digitalRead(PIN_BTN1) == LOW) {
+      if (millis() - pressStart > 1000) {
+        // Long press detected, make selection
+        _mode = static_cast<MODE>(position + 1); // Assuming enum starts at 1
+        Serial.print("Selected mode: "); Serial.println(_mode);
+        return;
+      }
+      delay(10);
+    }
+    delay(100); // Polling delay
+  }
+  Blip(1);
+}
+
 
 void Blip(int blips){
   for (int i = 0; i < blips; i++) {
@@ -751,7 +927,9 @@ void loadImageFromLittleFS(const char* filename, int xpos, int ypos) {
 }
 
 // Load RGB565 image from LittleFS and draw to sprite (line-by-line to save RAM)
-void loadImageToSpriteFromLittleFS(TFT_eSprite &spr, const char* filename, int xpos, int ypos) {
+// imageWidth and imageHeight are optional - if imageHeight is 0, it's calculated from file size
+// transparentColor: pixels of this color won't be drawn (default 0xFFFF = white, use 0xF81F for magenta)
+void loadImageToSpriteFromLittleFS(TFT_eSprite &spr, const char* filename, int xpos, int ypos, int imageWidth, int imageHeight, uint16_t transparentColor) {
   Serial.print("Loading image to sprite from LittleFS: ");
   Serial.println(filename);
   
@@ -766,17 +944,28 @@ void loadImageToSpriteFromLittleFS(TFT_eSprite &spr, const char* filename, int x
   Serial.print(fileSize);
   Serial.println(" bytes");
   
-  // Calculate dimensions (assuming 320x240)
-  int width = 320;
-  int height = fileSize / (width * 2);
+  // Calculate dimensions - use provided width, calculate height if not provided
+  int width = imageWidth;
+  int height = imageHeight;
+  if (height == 0) {
+    height = fileSize / (width * 2);
+  }
   
   Serial.print("Image dimensions: ");
   Serial.print(width);
   Serial.print("x");
   Serial.println(height);
   
-  // Allocate buffer for ONE line (640 bytes instead of 153600!)
-  uint16_t* lineBuffer = (uint16_t*)malloc(width * 2);
+  // Check if transparency is enabled
+  bool useTransparency = (transparentColor != 0xFFFF); // 0xFFFF means no transparency
+  if (useTransparency) {
+    Serial.print("Using transparency: 0x");
+    Serial.println(transparentColor, HEX);
+  }
+  
+  // Allocate buffer for ONE line (width pixels * 2 bytes per pixel)
+  size_t lineBufferSize = width * sizeof(uint16_t);
+  uint16_t* lineBuffer = (uint16_t*)malloc(lineBufferSize);
   if (!lineBuffer) {
     Serial.println("Failed to allocate line buffer");
     file.close();
@@ -786,14 +975,28 @@ void loadImageToSpriteFromLittleFS(TFT_eSprite &spr, const char* filename, int x
   long totalBytesRead = 0;
   // Read and push image line by line
   for (int y = 0; y < height; y++) {
-    size_t bytesRead = file.read((uint8_t*)lineBuffer, width * 2);
-    if (bytesRead != width * 2) {
+    size_t bytesRead = file.read((uint8_t*)lineBuffer, lineBufferSize);
+    if (bytesRead != lineBufferSize) {
       Serial.print("Failed to read line ");
-      Serial.println(y);
+      Serial.print(y);
+      Serial.print(" - Expected ");
+      Serial.print(lineBufferSize);
+      Serial.print(" bytes, got ");
+      Serial.println(bytesRead);
       break;
     }
-    // Push one line at a time to sprite
-    spr.pushImage(xpos, ypos + y, width, 1, lineBuffer);
+    // Push one line at a time to sprite with optional transparency
+    if (useTransparency) {
+      // Draw pixel by pixel, skipping transparent color
+      for (int x = 0; x < width; x++) {
+        if (lineBuffer[x] != transparentColor) {
+          spr.drawPixel(xpos + x, ypos + y, lineBuffer[x]);
+        }
+      }
+    } else {
+      // No transparency - push entire line at once (faster)
+      spr.pushImage(xpos, ypos + y, width, 1, lineBuffer);
+    }
     totalBytesRead += bytesRead;
   }
   
@@ -805,3 +1008,226 @@ void loadImageToSpriteFromLittleFS(TFT_eSprite &spr, const char* filename, int x
   free(lineBuffer);
   Serial.println("Image loaded to sprite successfully");
 }
+
+// Function GetNinjaQuote(), return malloc'd char array (CALLER MUST FREE!)
+// Returns nullptr on error
+char* GetNinjaQuote() {
+  // Setup GET request to quote API using WiFiClientSecure
+  WiFiClientSecure client;
+  client.setInsecure(); // Skip certificate validation
+  
+  const char* host = "api.api-ninjas.com";
+  const int httpsPort = 443;
+  
+  Serial.println("Connecting to API Ninjas...");
+  if (!client.connect(host, httpsPort)) {
+    Serial.println("ERROR: Failed to connect to quote API");
+    return nullptr;
+  }
+  
+  // Send HTTP GET request
+  client.print(String("GET /v1/quotes HTTP/1.1\r\n") +
+               "Host: " + host + "\r\n" +
+               "X-Api-Key: " + API_NINJAS_KEY + "\r\n" +
+               "Content-Type: application/json\r\n" +
+               "Connection: close\r\n\r\n");
+  
+  // Wait for response
+  unsigned long timeout = millis();
+  while (client.available() == 0) {
+    if (millis() - timeout > 5000) {
+      Serial.println("ERROR: API request timeout");
+      client.stop();
+      return nullptr;
+    }
+  }
+  
+  // Read response
+  String response = "";
+  bool headersEnded = false;
+  
+  while (client.available()) {
+    String line = client.readStringUntil('\n');
+    if (line == "\r") {
+      headersEnded = true;
+      continue;
+    }
+    if (headersEnded) {
+      response += line;
+    }
+  }
+  
+  client.stop();
+  
+  Serial.println("Response: " + response);
+  
+  // Parse JSON and extract quote
+  StaticJsonDocument<512> doc;
+  DeserializationError error = deserializeJson(doc, response);
+  if (!error) {
+    const char* quote = doc[0]["quote"]; // API returns array, get first element
+    if (quote) {
+      // Allocate memory and copy the quote string
+      size_t len = strlen(quote);
+      char* result = (char*)malloc(len + 1);
+      if (result) {
+        strcpy(result, quote);
+        return result;
+      } else {
+        Serial.println("ERROR: malloc failed");
+        return nullptr;
+      }
+    }
+  }
+  
+  Serial.print("ERROR: JSON parsing failed: ");
+  Serial.println(error.c_str());
+  return nullptr;
+}
+
+void drawWrappedText(TFT_eSprite &spr, const char* text, int x, int y, int maxWidth, int lineHeight) {
+  spr.setFreeFont(&GilliganShutter10pt7b);
+  spr.setTextColor(TFT_WHITE);
+  spr.setTextDatum(TL_DATUM);  // Top-left alignment
+  
+  char buffer[256];
+  strncpy(buffer, text, sizeof(buffer) - 1);
+  buffer[sizeof(buffer) - 1] = '\0';
+  
+  char* word = strtok(buffer, " ");
+  int currentX = x;
+  int currentY = y;
+  
+  while (word != NULL) {
+    int wordWidth = spr.textWidth(word);
+    int spaceWidth = spr.textWidth("  ");
+    
+    // Check if word fits on current line
+    if (currentX + wordWidth > x + maxWidth && currentX > x) {
+      // Move to next line
+      currentX = x;
+      currentY += lineHeight;
+    }
+    
+    // Draw the word
+    spr.setCursor(currentX, currentY);
+    spr.print(word);
+    currentX += wordWidth + spaceWidth;
+    
+    word = strtok(NULL, " ");
+  }
+}
+
+void displayStatusInfo() {
+  Serial.println("Displaying status info...");
+  
+  // Clear screen
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(1);
+  tft.setTextDatum(TL_DATUM);  // Top-left alignment
+  
+  int y = 10;
+  int lineHeight = 16;
+  
+  // Version
+  tft.setCursor(10, y);
+  tft.print("Version: ");
+  tft.println(VERSION);
+  y += lineHeight;
+  
+  // Uptime
+  tft.setCursor(10, y);
+  unsigned long uptimeSeconds = millis() / 1000;
+  unsigned long days = uptimeSeconds / 86400;
+  unsigned long hours = (uptimeSeconds % 86400) / 3600;
+  unsigned long minutes = (uptimeSeconds % 3600) / 60;
+  unsigned long seconds = uptimeSeconds % 60;
+  tft.printf("Uptime: %dd %02d:%02d:%02d\n", days, hours, minutes, seconds);
+  y += lineHeight;
+  
+  // WiFi Status
+  tft.setCursor(10, y);
+  tft.print("WiFi: ");
+  tft.println(WiFi.isConnected() ? "Connected" : "Disconnected");
+  y += lineHeight;
+  
+  // IP Address
+  tft.setCursor(10, y);
+  tft.print("IP: ");
+  tft.println(WiFi.localIP().toString());
+  y += lineHeight;
+  
+  // WiFi Signal Strength
+  tft.setCursor(10, y);
+  int rssi = WiFi.RSSI();
+  tft.print("Signal: ");
+  tft.print(rssi);
+  tft.print(" dBm (");
+  // Convert RSSI to quality percentage
+  int quality;
+  if (rssi <= -100) quality = 0;
+  else if (rssi >= -50) quality = 100;
+  else quality = 2 * (rssi + 100);
+  tft.print(quality);
+  tft.println("%)");
+  y += lineHeight;
+  
+  // Memory Usage
+  tft.setCursor(10, y);
+  tft.print("Free Heap: ");
+  tft.print(ESP.getFreeHeap() / 1024);
+  tft.print(" / ");
+  tft.print(ESP.getHeapSize() / 1024);
+  tft.println(" KB");
+  y += lineHeight;
+  
+  tft.setCursor(10, y);
+  tft.print("Min Free: ");
+  tft.print(ESP.getMinFreeHeap() / 1024);
+  tft.println(" KB");
+  y += lineHeight;
+  
+  // Flash Memory
+  tft.setCursor(10, y);
+  tft.print("Flash: ");
+  tft.print(ESP.getFlashChipSize() / 1024 / 1024);
+  tft.println(" MB");
+  y += lineHeight;
+  
+  // LittleFS Information
+  tft.setCursor(10, y);
+  size_t totalBytes = LittleFS.totalBytes();
+  size_t usedBytes = LittleFS.usedBytes();
+  tft.printf("LittleFS: %d / %d KB\n", usedBytes / 1024, totalBytes / 1024);
+  y += lineHeight;
+  
+  // Count files in LittleFS
+  tft.setCursor(10, y);
+  int fileCount = 0;
+  File root = LittleFS.open("/");
+  if (root) {
+    File file = root.openNextFile();
+    while (file) {
+      if (!file.isDirectory()) {
+        fileCount++;
+      }
+      file = root.openNextFile();
+    }
+  }
+  tft.print("Files: ");
+  tft.println(fileCount);
+  y += lineHeight;
+  
+  // Current Mode
+  y += 5; // Extra spacing
+  tft.setCursor(10, y);
+  tft.print("Mode: ");
+  switch(_mode) {
+    case STATIC: tft.println("STATIC"); break;
+    case QUOTE: tft.println("QUOTE"); break;
+    case CLOCK: tft.println("CLOCK"); break;
+    case STATUSINFO: tft.println("STATUSINFO"); break;
+    default: tft.println("UNKNOWN"); break;
+  }
+} 

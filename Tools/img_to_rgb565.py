@@ -27,14 +27,33 @@ output_file = base_name + '.h'
 
 print(f"Converting {input_file} to RGB565...")
 
-# Open and resize image
-img = Image.open(input_file).convert('RGB').resize((320, 240))
-print(f"Image size: {img.size}")
+# Open image - preserve transparency if it exists
+original_img = Image.open(input_file)
+has_transparency = original_img.mode in ('RGBA', 'LA', 'P') and 'transparency' in original_img.info or original_img.mode == 'RGBA'
+
+# Transparent color in RGB565 - magenta #FF00FF = 0xF81F
+TRANSPARENT_RGB = (255, 0, 255)  # Magenta
+
+if has_transparency:
+    print("Image has transparency - converting transparent pixels to magenta (#FF00FF)")
+    # Convert to RGBA to access alpha channel
+    img_rgba = original_img.convert('RGBA')
+    # Create RGB image with magenta background for transparent pixels
+    img = Image.new('RGB', img_rgba.size, TRANSPARENT_RGB)
+    # Paste the RGBA image onto the RGB background using alpha as mask
+    img.paste(img_rgba, (0, 0), img_rgba)
+else:
+    print("Image has no transparency - converting to RGB")
+    img = original_img.convert('RGB')
+
+width, height = img.size
+print(f"Image size: {width}x{height}")
 print(f"Image mode: {img.mode}")
 
 # Test several pixels to verify the image has data
 print("\nSampling pixels:")
-test_coords = [(0, 0), (160, 120), (319, 239), (100, 100), (200, 150)]
+# Use actual dimensions for sampling
+test_coords = [(0, 0), (width//2, height//2), (width-1, height-1), (width//3, height//3), (2*width//3, 2*height//3)]
 for x, y in test_coords:
     r, g, b = img.getpixel((x, y))
     print(f"  Pixel ({x:3d}, {y:3d}): RGB({r:3d}, {g:3d}, {b:3d})")
@@ -52,17 +71,19 @@ if non_black == 0:
 else:
     print(f"\nImage looks good! {non_black/len(pixels)*100:.1f}% non-black pixels")
 
+total_pixels = width * height
+
 with open(output_file, 'w') as f:
     f.write(f'#ifndef {array_name.upper()}_H\n')
     f.write(f'#define {array_name.upper()}_H\n\n')
-    f.write(f'// Image size: 320x240 pixels\n')
+    f.write(f'// Image size: {width}x{height} pixels\n')
     f.write(f'// Format: RGB565 (16-bit color)\n')
-    f.write(f'const uint16_t {array_name}[76800] PROGMEM = {{\n')
+    f.write(f'const uint16_t {array_name}[{total_pixels}] PROGMEM = {{\n')
     
     pixel_count = 0
-    for y in range(240):
+    for y in range(height):
         f.write('  ')  # Indentation
-        for x in range(320):
+        for x in range(width):
             r, g, b = img.getpixel((x, y))
             # Convert RGB888 to RGB565
             # R: 8 bits -> 5 bits (keep top 5)
@@ -73,11 +94,11 @@ with open(output_file, 'w') as f:
             f.write(f'0x{rgb565:04X}')
             pixel_count += 1
             
-            if pixel_count < 76800:
+            if pixel_count < total_pixels:
                 f.write(',')
             
             # Add newline every 16 pixels for readability
-            if x < 319 and (x + 1) % 16 == 0:
+            if x < width - 1 and (x + 1) % 16 == 0:
                 f.write('\n  ')
         f.write('\n')
     
@@ -86,16 +107,18 @@ with open(output_file, 'w') as f:
 
 # Add after the normal .h file generation:
 with open(base_name + '.rgb565', 'wb') as f:
-    for y in range(240):
-        for x in range(320):
+    for y in range(height):
+        for x in range(width):
             r, g, b = img.getpixel((x, y))
             rgb565 = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
             # Write as little-endian uint16
             f.write(rgb565.to_bytes(2, byteorder='little'))
 
-print(f"Conversion complete! Output: {output_file}")
+print(f"Conversion complete! Output: {output_file} and {base_name}.rgb565")
 print(f"Total pixels: {pixel_count}")
+print(f"Image dimensions: {width}x{height}")
 print(f"File size: ~{os.path.getsize(output_file) / 1024:.1f} KB (source)")
-print(f"Array size: {320 * 240 * 2} bytes ({320 * 240 * 2 / 1024:.1f} KB in flash)")
+print(f"Binary file size: {width * height * 2} bytes ({width * height * 2 / 1024:.1f} KB)")
+print(f"Array size in flash: {width * height * 2} bytes ({width * height * 2 / 1024:.1f} KB)")
 
 

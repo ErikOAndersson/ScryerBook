@@ -22,7 +22,7 @@
 #define TFT_MOSI  7   // SDA
 #define TFT_SCLK  6   // SCL
 #define TFT_CS    10  // Chip select
-#define TFT_DC    2   // Data/Command
+#define TFT_DC    2   // Data/Command0 (Was 2)
 #define TFT_RST   3   // Reset (set to -1 if not connected)
 // #define TFT_BL 4   // Backlight (optional)
 
