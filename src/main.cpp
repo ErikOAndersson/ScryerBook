@@ -672,21 +672,17 @@ void renderJPEG(int xpos, int ypos) {
   Serial.println(JpegDec.height);
   
   // Read and display each MCU block
-  while (JpegDec.read()) {
-  //while (JpegDec.readSwappedBytes()) {
+  // Use readSwappedBytes() for proper RGB565 format with byte-swapping
+  while (JpegDec.readSwappedBytes()) {
     int mcu_x = JpegDec.MCUx * JpegDec.MCUWidth + xpos;
     int mcu_y = JpegDec.MCUy * JpegDec.MCUHeight + ypos;
     
     // Rotate the image 180 degrees before pushing
     // Calculate rotated position
-    int rotated_x = JpegDec.width - (JpegDec.MCUx + 1) * JpegDec.MCUWidth - xpos;
-    int rotated_y = JpegDec.height - (JpegDec.MCUy + 1) * JpegDec.MCUHeight - ypos;
+    int rotated_x = JpegDec.width - (JpegDec.MCUx + 1) * JpegDec.MCUWidth + xpos;
+    int rotated_y = JpegDec.height - (JpegDec.MCUy + 1) * JpegDec.MCUHeight + ypos;
 
     tft.pushImage(rotated_x, rotated_y, JpegDec.MCUWidth, JpegDec.MCUHeight, JpegDec.pImage);
-
-
-    // Old upside down image
-    //tft.pushImage(mcu_x, mcu_y, JpegDec.MCUWidth, JpegDec.MCUHeight, JpegDec.pImage);
   }
 }
 
@@ -821,11 +817,11 @@ void fetchAndDisplayImage() {
   Serial.println(freeHeap);
   
   // Allocate buffer for base64 data - use dynamic size based on available heap
-  // Reserve 100KB for system/stack, use rest for buffer
-  size_t maxBase64Size = (freeHeap > 110000) ? (freeHeap - 110000) : 30000;
+  // Reserve 90KB for system/stack, use rest for buffer (more aggressive to fit larger images)
+  size_t maxBase64Size = (freeHeap > 100000) ? (freeHeap - 90000) : 30000;
   
-  // Cap at reasonable maximum
-  if (maxBase64Size > 80000) maxBase64Size = 80000;
+  // Cap at reasonable maximum (increased from 80KB to 100KB)
+  if (maxBase64Size > 100000) maxBase64Size = 100000;
   
   Serial.print("Allocating ");
   Serial.print(maxBase64Size);
@@ -870,6 +866,15 @@ void fetchAndDisplayImage() {
       
       // Read chunk data
       size_t bytesToRead = min((size_t)chunkSize, maxBase64Size - totalBytesRead - 1);
+      
+      // Warn if we're truncating
+      if (bytesToRead < (size_t)chunkSize) {
+        Serial.print("WARNING: Buffer full! Truncating chunk from ");
+        Serial.print(chunkSize);
+        Serial.print(" to ");
+        Serial.println(bytesToRead);
+      }
+      
       size_t chunkBytesRead = 0;
       
       while (chunkBytesRead < bytesToRead && (millis() - startTime < 30000)) {

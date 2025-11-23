@@ -18,8 +18,8 @@ void loadSettings() {
   
   // Load WiFi settings
   // REMOVE THIS (comment) hubba
-  //wifiSSID = preferences.getString("wifiSSID", WIFI_SSID);
-  //wifiPassword = preferences.getString("wifiPassword", WIFI_PASSWORD);
+  wifiSSID = preferences.getString("wifiSSID", WIFI_SSID);
+  wifiPassword = preferences.getString("wifiPassword", WIFI_PASSWORD);
  
   
   // Load image server settings
