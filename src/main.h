@@ -16,7 +16,7 @@
 #define API_NINJAS_URL "https://api.api-ninjas.com/v1/"
 #define API_NINJAS_KEY "oc9IJzYB5MIJToPwxULcEg==7Xsm6HptY9Pclqk8"
 
-enum MODE { FETCH, CLOCK, STATIC, QUOTE, NONE, STATUSINFO };
+enum MODE { FETCH, CLOCK, ALBUM, QUOTE, STATUSINFO, NONE  };
 #define VERSION "1.0.1115"
 
 // Function declarations5
