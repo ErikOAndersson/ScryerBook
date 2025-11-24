@@ -1,0 +1,117 @@
+Ethernet adapter Ethernet:
+
+   Connection-specific DNS Suffix  . : signup.se
+   Link-local IPv6 Address . . . . . : fe80::8345:3f99:eb99:1e03%19
+   IPv4 Address. . . . . . . . . . . : 10.10.200.155
+   Subnet Mask . . . . . . . . . . . : 255.255.255.0
+   Default Gateway . . . . . . . . . : 10.10.200.1
+
+Wireless LAN adapter Wi-Fi 4:
+
+   Media State . . . . . . . . . . . : Media disconnected
+   Connection-specific DNS Suffix  . :
+
+Wireless LAN adapter Wi-Fi 5:
+
+   Media State . . . . . . . . . . . : Media disconnected
+   Connection-specific DNS Suffix  . :
+
+Wireless LAN adapter Wi-Fi:
+
+   Media State . . . . . . . . . . . : Media disconnected
+   Connection-specific DNS Suffix  . : signup.se
+
+Ethernet adapter Bluetooth Network Connection:
+
+   Media State . . . . . . . . . . . : Media disconnected
+   Connection-specific DNS Suffix  . :
+
+Ethernet adapter vEthernet (Default Switch):
+
+   Connection-specific DNS Suffix  . :
+   Link-local IPv6 Address . . . . . : fe80::c8f0:769b:be60:1760%36
+   IPv4 Address. . . . . . . . . . . : 172.30.0.1
+   Subnet Mask . . . . . . . . . . . : 255.255.240.0
+   Default Gateway . . . . . . . . . :
+
+G:\My Drive\Stuff\Projects\AI3D>ipconfig /all
+
+Windows IP Configuration
+
+   Host Name . . . . . . . . . . . . : SC1-9VRV244
+   Primary Dns Suffix  . . . . . . . :
+   Node Type . . . . . . . . . . . . : Hybrid
+   IP Routing Enabled. . . . . . . . : No
+   WINS Proxy Enabled. . . . . . . . : No
+   DNS Suffix Search List. . . . . . : signup.se
+
+Ethernet adapter Ethernet:
+
+   Connection-specific DNS Suffix  . : signup.se
+   Description . . . . . . . . . . . : Realtek USB GbE Family Controller
+   Physical Address. . . . . . . . . : 28-00-AF-22-85-FD
+   DHCP Enabled. . . . . . . . . . . : Yes
+   Autoconfiguration Enabled . . . . : Yes
+   Link-local IPv6 Address . . . . . : fe80::8345:3f99:eb99:1e03%19(Preferred)
+   IPv4 Address. . . . . . . . . . . : 10.10.200.155(Preferred)
+   Subnet Mask . . . . . . . . . . . : 255.255.255.0
+   Lease Obtained. . . . . . . . . . : Monday, 24 November 2025 08:12:21
+   Lease Expires . . . . . . . . . . : Tuesday, 2 December 2025 08:12:09
+   Default Gateway . . . . . . . . . : 10.10.200.1
+   DHCP Server . . . . . . . . . . . : 10.10.3.100
+   DHCPv6 IAID . . . . . . . . . . . : 319567766
+   DHCPv6 Client DUID. . . . . . . . : 00-01-00-01-2D-FE-5E-9D-28-00-AF-22-85-FD
+   DNS Servers . . . . . . . . . . . : 10.10.3.100
+                                       10.10.3.101
+   NetBIOS over Tcpip. . . . . . . . : Enabled
+
+Wireless LAN adapter Wi-Fi 4:
+
+   Media State . . . . . . . . . . . : Media disconnected
+   Connection-specific DNS Suffix  . :
+   Description . . . . . . . . . . . : Intel(R) Wi-Fi 7 BE200 320MHz #4
+   Physical Address. . . . . . . . . : A2-D3-65-6E-A9-24
+   DHCP Enabled. . . . . . . . . . . : Yes
+   Autoconfiguration Enabled . . . . : Yes
+
+Wireless LAN adapter Wi-Fi 5:
+
+   Media State . . . . . . . . . . . : Media disconnected
+   Connection-specific DNS Suffix  . :
+   Description . . . . . . . . . . . : Intel(R) Wi-Fi 7 BE200 320MHz #5
+   Physical Address. . . . . . . . . : A0-D3-65-6E-A9-25
+   DHCP Enabled. . . . . . . . . . . : Yes
+   Autoconfiguration Enabled . . . . : Yes
+
+Wireless LAN adapter Wi-Fi:
+
+   Media State . . . . . . . . . . . : Media disconnected
+   Connection-specific DNS Suffix  . : signup.se
+   Description . . . . . . . . . . . : Intel(R) Wi-Fi 7 BE200 320MHz
+   Physical Address. . . . . . . . . : A0-D3-65-6E-A9-24
+   DHCP Enabled. . . . . . . . . . . : Yes
+   Autoconfiguration Enabled . . . . : Yes
+
+Ethernet adapter Bluetooth Network Connection:
+
+   Media State . . . . . . . . . . . : Media disconnected
+   Connection-specific DNS Suffix  . :
+   Description . . . . . . . . . . . : Bluetooth Device (Personal Area Network)
+   Physical Address. . . . . . . . . : A0-D3-65-6E-A9-28
+   DHCP Enabled. . . . . . . . . . . : Yes
+   Autoconfiguration Enabled . . . . : Yes
+
+Ethernet adapter vEthernet (Default Switch):
+
+   Connection-specific DNS Suffix  . :
+   Description . . . . . . . . . . . : Hyper-V Virtual Ethernet Adapter
+   Physical Address. . . . . . . . . : 00-15-5D-C8-75-37
+   DHCP Enabled. . . . . . . . . . . : No
+   Autoconfiguration Enabled . . . . : Yes
+   Link-local IPv6 Address . . . . . : fe80::c8f0:769b:be60:1760%36(Preferred)
+   IPv4 Address. . . . . . . . . . . : 172.30.0.1(Preferred)
+   Subnet Mask . . . . . . . . . . . : 255.255.240.0
+   Default Gateway . . . . . . . . . :
+   DHCPv6 IAID . . . . . . . . . . . : 603985245
+   DHCPv6 Client DUID. . . . . . . . : 00-01-00-01-2D-FE-5E-9D-28-00-AF-22-85-FD
+   NetBIOS over Tcpip. . . . . . . . : Enabled

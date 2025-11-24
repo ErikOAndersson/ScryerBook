@@ -1,21 +1,22 @@
 #include "main.h"
 #include "webserver.h"
+#include "network.h"
+#include "fetchimage.h"
+#include "quote.h"
+#include "clock.h"
 #include <TFT_eSPI.h>
-#include <JPEGDecoder.h>
 #include <WiFi.h>
-#include <WiFiClientSecure.h>
-#include <ArduinoHttpClient.h>
 #include <Preferences.h>
-#include <ArduinoJson.h>
-#include "FS.h"
-#include "LittleFS.h"
+#include <FS.h>
+#include <LittleFS.h>
 //#include "beach.h"
-#include "wifi_credentials.h"
 #include <math.h>
 //#include "face1.h"
 //#include "static1.h"
 #include "font_gilligan_10.h"
 #include "time.h"
+
+using fs::File;
 
 #define min(a,b)     (((a) < (b)) ? (a) : (b))
 
@@ -27,18 +28,6 @@ void drawWrappedText(TFT_eSprite &spr, const char* text, int x, int y, int maxWi
 // Preferences for storing settings
 Preferences preferences;
 
-// WiFi credentials - can be overridden by web settings
-String wifiSSID = WIFI_SSID;
-String wifiPassword = WIFI_PASSWORD;
-
-// Static IP configuration
-IPAddress staticIP(192, 168, 1, 61);
-IPAddress gateway(192, 168, 1, 1);
-IPAddress subnet(255, 255, 255, 0);
-IPAddress primaryDNS(8, 8, 8, 8);
-IPAddress secondaryDNS(8, 8, 4, 4);
-
-WiFiClientSecure wifi;
 WiFiServer webServer(80);  // Web server on port 80
 
 // Timey-wimey stuff
@@ -47,10 +36,7 @@ const long  gmtOffset_sec = 0;
 const int   daylightOffset_sec = 7200;
 
 
-// Image server configuration - can be changed via web interface
-String imageServerAddress = "witty-cliff-e5fe8cff64ae48afb25807a538c2dad2.azurewebsites.net";
-int imageServerPort = 443;  // HTTPS port
-String imageServerPath = "/?width=240&height=320&rotate=270";
+// 20.48.203.0
 
 // Local testing server
 // String imageServerAddress = "192.168.1.55";1
@@ -59,9 +45,6 @@ String imageServerPath = "/?width=240&height=320&rotate=270";
 
 bool useStaticImage = false;
 bool useClockMode = false;
-
-// Create HTTPS client
-HttpClient client = HttpClient(wifi, imageServerAddress.c_str(), imageServerPort);
 
 // Timing - can be changed via web interface
 unsigned long lastFetchTime = 99999999; // Force immediate fetch on startup
@@ -76,7 +59,6 @@ TFT_eSPI tft = TFT_eSPI();
 
 // Sprite stuff for the clock face, and other vars
 TFT_eSprite sprite = TFT_eSprite(&tft); // Create a sprite instance
-struct tm timeinfo;
 
 // do not forget User_Setup_xxxx.h matching microcontroller-display combination
  // my own: "/include/User_Setup.h"
@@ -94,7 +76,7 @@ int count = 0;
 MODE _mode = CLOCK;
 
 // Temporary for testing, remove this
-const char tmp_quote[] = "I slept with faith and found a corpse in my arms on awakening I drank and danced all night with doubt and found her a virgin in the morning.";
+//const char tmp_quote[] = "I slept with faith and found a corpse in my arms on awakening I drank and danced all night with doubt and found her a virgin in the morning.";
 
 // ======================================================================
 // Setup function
@@ -128,8 +110,14 @@ void setup() {
 
   // Disable WiFi for testing
 #if ENABLE_WIFI
-  // Connect to WiFI with static IP
+  // Initialize network system and connect to WiFi
+  initNetwork();
   connectWiFi();
+  
+  // Initialize image fetching, quote, and clock systems
+  initFetchImage();
+  initQuote();
+  initClock();
   
   // Start web server
   webServer.begin();
@@ -158,14 +146,6 @@ void setup() {
       }
     }
   }
-  
-  // Configure WiFiClientSecure to skip certificate validation (for development)
-  // For production, you should use proper certificate validation
-  wifi.setInsecure();
-  wifi.setTimeout(30000); // Set SSL timeout to 30 seconds (default is 5 seconds)
-  
-  // Set HttpClient timeout
-  client.setTimeout(30000); // Set HTTP client timeout to 30 seconds
 #endif // ENABLE_WIFI
 
   tft.begin();
@@ -488,11 +468,11 @@ void btn1Pressed() {
         tft.setTextColor(TFT_YELLOW);
         tft.setTextSize(2);
         tft.setCursor(10, 10);
-        tft.println("Fetching image...");
+        
+        tft.println("Please wait...");
         lastFetchTime = 99999999; // Force immediate update on mode change
       }
       
-
       // Wait for button release
       while (digitalRead(PIN_BTN2) == LOW) {
         delay(10);
@@ -522,45 +502,6 @@ void Blip(int blips){
     digitalWrite(PIN_LED, LOW);
     delay(300);
   }
-}
-
-// Base64 decoding lookup table
-const char base64_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-// Base64 decoder function
-size_t base64Decode(const char* input, uint8_t* output, size_t outputSize) {
-  size_t inputLen = strlen(input);
-  size_t outputLen = 0;
-  uint32_t bits = 0;
-  int bitCount = 0;
-  
-  for (size_t i = 0; i < inputLen; i++) {
-    char c = input[i];
-    
-    // Skip whitespace and newlines
-    if (c == ' ' || c == '\n' || c == '\r' || c == '\t') continue;
-    
-    // Handle padding
-    if (c == '=') break;
-    
-    // Find character in base64 alphabet
-    const char* pos = strchr(base64_chars, c);
-    if (!pos) continue;  // Invalid character, skip
-    
-    int value = pos - base64_chars;
-    bits = (bits << 6) | value;
-    bitCount += 6;
-    
-    if (bitCount >= 8) {
-      bitCount -= 8;
-      if (outputLen < outputSize) {
-        output[outputLen++] = (bits >> bitCount) & 0xFF;
-      } else {
-        return 0; // Output buffer too small
-      }
-    }
-  }
-  
-  return outputLen;
 }
 
 // Draw RGB565 image array to display
@@ -602,515 +543,6 @@ void drawRGB565ImageToSprite(TFT_eSprite &spr, const uint16_t* imageData, int wi
   
   // Push the image to sprite (reads from PROGMEM if needed)
   spr.pushImage(xpos, ypos, width, height, imageData);
-}
-
-// Decode Base64 JPEG and display it
-void drawJpegFromBase64(const char* base64String, int xpos, int ypos) {
-  // Just return if string is empty
-  if (base64String == NULL || strlen(base64String) == 0) {
-    Serial.println("ERROR: Empty Base64 string");
-    return;
-  }
-
-  // Calculate approximate decoded size (Base64 is ~133% of original)
-  //Serial.println("-----2");
-
-  size_t base64Len = strlen(base64String);
-  //Serial.println("-----3");
-  size_t maxDecodedSize = (base64Len * 3) / 4 + 1;
-  //Serial.println("-----4");
-  
-  Serial.print("Base64 string length: "); Serial.println(base64Len);
-  Serial.print("Estimated decoded size: "); Serial.println(maxDecodedSize);
-  
-  // Allocate buffer for decoded JPEG data
-  uint8_t* jpegData = (uint8_t*)malloc(maxDecodedSize);
-  if (!jpegData) {
-    Serial.println("ERROR: Failed to allocate memory for JPEG data");
-    return;
-  }
-
-  Serial.println("First 30 characters of B64 string:");
-  for (int i = 0; i < 30 && i < base64Len; i++) {
-    Serial.print(base64String[i]);
-  }
-  Serial.println();
-  
-  // Decode Base64 to binary JPEG
-  size_t jpegSize = base64Decode(base64String, jpegData, maxDecodedSize);
-  
-  if (jpegSize == 0) {
-    Serial.println("ERROR: Base64 decode failed");
-    free(jpegData);
-    return;
-  }
-  
-  Serial.print("Decoded JPEG size: "); Serial.println(jpegSize);
-  
-  // Decode JPEG from memory buffer
-  bool decoded = JpegDec.decodeArray(jpegData, jpegSize);
-  
-  if (!decoded) {
-    Serial.println("ERROR: JPEG decode failed");
-    free(jpegData);
-    return;
-  }
-  
-  // Render the JPEG to display
-  renderJPEG(xpos, ypos);
-  
-  // Clean up
-  free(jpegData);
-  Serial.println("JPEG displayed successfully");
-}
-
-// Render the decoded JPEG to the TFT display (simplified - assumes correct size)
-void renderJPEG(int xpos, int ypos) {
-  Serial.print("JPEG dimensions: ");
-  Serial.print(JpegDec.width);
-  Serial.print(" x ");
-  Serial.println(JpegDec.height);
-  
-  // Read and display each MCU block
-  // Use readSwappedBytes() for proper RGB565 format with byte-swapping
-  while (JpegDec.readSwappedBytes()) {
-    int mcu_x = JpegDec.MCUx * JpegDec.MCUWidth + xpos;
-    int mcu_y = JpegDec.MCUy * JpegDec.MCUHeight + ypos;
-    
-    // Rotate the image 180 degrees before pushing
-    // Calculate rotated position
-    //int rotated_x = JpegDec.width - (JpegDec.MCUx + 1) * JpegDec.MCUWidth + xpos;
-    //int rotated_y = JpegDec.height - (JpegDec.MCUy + 1) * JpegDec.MCUHeight + ypos;
-
-     // Don't rotate for now, just push normally
-     tft.pushImage(mcu_x, mcu_y, JpegDec.MCUWidth, JpegDec.MCUHeight, JpegDec.pImage);
-
-    //tft.pushImage(rotated_x, rotated_y, JpegDec.MCUWidth, JpegDec.MCUHeight, JpegDec.pImage);
-
-
-    
-  }
-}
-
-// Connect to WiFi
-void connectWiFi() {
-  Serial.println();
-  Serial.print("Connecting to WiFi: ");
-  Serial.println(wifiSSID);
-  
-  // Configure static IP
-  if (!WiFi.config(staticIP, gateway, subnet, primaryDNS, secondaryDNS)) {
-    Serial.println("STA Failed to configure");
-  }
-  
-  WiFi.begin(wifiSSID.c_str(), wifiPassword.c_str());
-  
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-    delay(500);
-    Serial.print(".");
-    attempts++;
-  }
-  
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println();
-    Serial.println("WiFi connected!");
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
-  } else {
-    Serial.println();
-    Serial.println("WiFi connection failed!");
-  }
-}
-
-// Fetch image from server and display it
-void fetchAndDisplayImage() {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi not connected!");
-    // Don't delete sprite if WiFi not connected
-    return;
-  }
-  
-  Serial.println("Fetching image from server...");
-  
-  // Delete sprite to free ~150KB of RAM for image buffers
-  sprite.deleteSprite();
-  Serial.println("Sprite deleted to free memory");
-  
-  Serial.print("Connecting to: ");
-  Serial.print(imageServerAddress);
-  Serial.print(":");
-  Serial.println(imageServerPort);
-  
-  // Ensure certificate validation is disabled (for self-signed certs)
-  wifi.setInsecure();
-  
-  // Stop any existing connection
-  wifi.stop();
-  
-  // Connect directly using WiFiClientSecure
-  Serial.println("Attempting SSL connection...");
-  if (!wifi.connect(imageServerAddress.c_str(), imageServerPort)) {
-    Serial.println("Connection failed!");
-    // Recreate sprite before returning
-    sprite.createSprite(SPRITE_WIDTH, SPRITE_HEIGHT);
-    sprite.setPivot(SPRITE_WIDTH/2, SPRITE_HEIGHT/2);
-    return;
-  }
-  
-  Serial.println("Connected! Sending HTTP request...");
-  
-  // Send HTTP GET request manually
-  wifi.print("GET ");
-  wifi.print(imageServerPath);
-  wifi.println(" HTTP/1.1");
-  wifi.print("Host: ");
-  wifi.println(imageServerAddress);
-  wifi.println("Connection: close");
-  wifi.println();
-  
-  Serial.println("Waiting for response...");
-  
-  // Wait for response with timeout
-  unsigned long timeout = millis();
-  while (!wifi.available() && (millis() - timeout < 10000)) {
-    delay(10);
-  }
-  
-  if (!wifi.available()) {
-    Serial.println("Response timeout!");
-    wifi.stop();
-    // Recreate sprite before returning
-    sprite.createSprite(SPRITE_WIDTH, SPRITE_HEIGHT);
-    sprite.setPivot(SPRITE_WIDTH/2, SPRITE_HEIGHT/2);
-    return;
-  }
-  
-  // Read status line
-  String statusLine = wifi.readStringUntil('\n');
-  Serial.print("Status: ");
-  Serial.println(statusLine);
-  
-  // Skip headers - read and display them for debugging
-  Serial.println("Headers:");
-  int headerCount = 0;
-  while (wifi.available()) {
-    String line = wifi.readStringUntil('\n');
-    line.trim(); // Remove \r and whitespace
-    
-    if (line.length() == 0) {
-      Serial.println("--- End of headers ---");
-      break; // Empty line indicates end of headers
-    }
-    
-    Serial.println(line);
-    headerCount++;
-    
-    // Safety check - don't read forever
-    if (headerCount > 50) {
-      Serial.println("ERROR: Too many headers!");
-      break;
-    }
-  }
-  
-  // Give a moment for any remaining data to arrive
-  delay(100);
-  
-  // Read response body with chunked encoding support
-  Serial.println("Reading response body (chunked encoding)...");
-  size_t freeHeap = ESP.getFreeHeap();
-  Serial.print("Free heap: ");
-  Serial.println(freeHeap);
-  
-  // Allocate buffer for base64 data - use dynamic size based on available heap
-  // Reserve 90KB for system/stack, use rest for buffer (more aggressive to fit larger images)
-  size_t maxBase64Size = (freeHeap > 100000) ? (freeHeap - 90000) : 30000;
-  
-  // Cap at reasonable maximum (increased from 80KB to 100KB)
-  if (maxBase64Size > 100000) maxBase64Size = 100000;
-  
-  Serial.print("Allocating ");
-  Serial.print(maxBase64Size);
-  Serial.println(" bytes for base64 buffer");
-  
-  char* base64Buffer = (char*)malloc(maxBase64Size);
-  
-  if (!base64Buffer) {
-    Serial.println("ERROR: Failed to allocate base64 buffer!");
-    wifi.stop();
-    // Recreate sprite before returning
-    sprite.createSprite(SPRITE_WIDTH, SPRITE_HEIGHT);
-    sprite.setPivot(SPRITE_WIDTH/2, SPRITE_HEIGHT/2);
-    return;
-  }
-  
-  // Read chunked data
-  size_t totalBytesRead = 0;
-  unsigned long startTime = millis();
-  
-  while (wifi.connected() && (millis() - startTime < 30000) && totalBytesRead < maxBase64Size - 1) {
-    if (wifi.available()) {
-      // Read chunk size line (hex number followed by \r\n)
-      String chunkSizeLine = wifi.readStringUntil('\n');
-      chunkSizeLine.trim();
-      
-      if (chunkSizeLine.length() == 0) continue; // Skip empty lines
-      
-      // Parse hex chunk size
-      long chunkSize = strtol(chunkSizeLine.c_str(), NULL, 16);
-      
-      if (chunkSize == 0) {
-        Serial.println("Received final chunk (size 0)");
-        break; // Last chunk
-      }
-      
-      Serial.print("Reading chunk of size: 0x");
-      Serial.print(chunkSize, HEX);
-      Serial.print(" (");
-      Serial.print(chunkSize);
-      Serial.println(" bytes)");
-      
-      // Read chunk data
-      size_t bytesToRead = min((size_t)chunkSize, maxBase64Size - totalBytesRead - 1);
-      
-      // Warn if we're truncating
-      if (bytesToRead < (size_t)chunkSize) {
-        Serial.print("WARNING: Buffer full! Truncating chunk from ");
-        Serial.print(chunkSize);
-        Serial.print(" to ");
-        Serial.println(bytesToRead);
-      }
-      
-      size_t chunkBytesRead = 0;
-      
-      while (chunkBytesRead < bytesToRead && (millis() - startTime < 30000)) {
-        if (wifi.available()) {
-          int bytesRead = wifi.read((uint8_t*)(base64Buffer + totalBytesRead + chunkBytesRead), 
-                                    bytesToRead - chunkBytesRead);
-          if (bytesRead > 0) {
-            chunkBytesRead += bytesRead;
-          }
-        } else {
-          delay(5);
-        }
-      }
-      
-      totalBytesRead += chunkBytesRead;
-      
-      // Read trailing \r\n after chunk data
-      wifi.readStringUntil('\n');
-      
-    } else {
-      delay(10);
-    }
-  }
-  
-  base64Buffer[totalBytesRead] = '\0';
-  wifi.stop();
-  
-  Serial.print("Received ");
-  Serial.print(totalBytesRead);
-  Serial.println(" base64 characters");
-  Serial.print("Free heap after read: ");
-  Serial.println(ESP.getFreeHeap());
-  
-  if (totalBytesRead > 0) {
-    // Show first and last few characters for debugging
-    Serial.print("First 20 chars: ");
-    for (int i = 0; i < 20 && i < totalBytesRead; i++) {
-      Serial.print(base64Buffer[i]);
-    }
-    Serial.println();
-    Serial.print("Last 20 chars: ");
-    for (int i = max(0, (int)totalBytesRead - 20); i < totalBytesRead; i++) {
-      Serial.print(base64Buffer[i]);
-    }
-    Serial.println();
-    
-    // Decode base64 to binary JPEG
-    size_t maxJpegSize = (totalBytesRead * 3) / 4 + 1;
-    uint8_t* jpegData = (uint8_t*)malloc(maxJpegSize);
-    
-    if (!jpegData) {
-      Serial.println("ERROR: Failed to allocate JPEG buffer!");
-      free(base64Buffer);
-      // Recreate sprite before returning
-      sprite.createSprite(SPRITE_WIDTH, SPRITE_HEIGHT);
-      sprite.setPivot(SPRITE_WIDTH/2, SPRITE_HEIGHT/2);
-      return;
-    }
-    
-    size_t jpegSize = base64Decode(base64Buffer, jpegData, maxJpegSize);
-    free(base64Buffer);  // Free base64 buffer immediately after decode
-    
-    Serial.print("Decoded to ");
-    Serial.print(jpegSize);
-    Serial.println(" JPEG bytes");
-    Serial.print("Free heap after decode: ");
-    Serial.println(ESP.getFreeHeap());
-    
-    // Verify JPEG header (should start with FF D8 FF)
-    if (jpegSize > 3) {
-      Serial.print("JPEG header: ");
-      Serial.print(jpegData[0], HEX);
-      Serial.print(" ");
-      Serial.print(jpegData[1], HEX);
-      Serial.print(" ");
-      Serial.println(jpegData[2], HEX);
-      
-      if (jpegData[0] != 0xFF || jpegData[1] != 0xD8) {
-        Serial.println("ERROR: Invalid JPEG header! Data may be corrupted.");
-      }
-    }
-    
-    if (jpegSize > 0) {
-      // Decode and render JPEG from memory
-      tft.fillScreen(TFT_BLACK);
-      
-      bool decoded = JpegDec.decodeArray(jpegData, jpegSize);
-      if (decoded) {
-        renderJPEG(0, 0);
-        Serial.println("JPEG rendered successfully!");
-      } else {
-        Serial.println("ERROR: JPEG decode failed!");
-        Serial.print("JpegDec error: ");
-        //Serial.println(JpegDec.getLastError());
-      }
-    }
-    
-    free(jpegData);
-  } else {
-    free(base64Buffer);
-    Serial.println("ERROR: Empty response!");
-  }
-  
-  // Recreate sprite for other modes (clock, quote, etc.)
-  sprite.createSprite(SPRITE_WIDTH, SPRITE_HEIGHT);
-  sprite.setPivot(SPRITE_WIDTH/2, SPRITE_HEIGHT/2);
-  Serial.println("Sprite recreated");
-}
-
-
-
-void DrawClockFace() {
-  DrawClockFace(CLOCK_WIDTH / 2, CLOCK_HEIGHT / 2, (CLOCK_WIDTH / 2) * CLOCK_SCALE);
-}
-
-// void UpdateClockFace() {
-//   UpdateClockFace(CLOCK_SCALE);
-// }
-
-void DrawClockFace(int xpos, int ypos, float scale) {
-  // Draw clock face on sprite (sprite should already be cleared/filled by caller)
-  sprite.setTextColor(TFT_WHITE); // White text
-  const float indlen = 0.9; // Indicator length factor
-  // Scale text size proportionally
-  //sprite.setTextSize(max(1, (int)(2 * CLOCK_SCALE)));
-  // Use fixed size insted
-  sprite.setTextSize(1);
-  // Use fancy font
-  sprite.setFreeFont(&GilliganShutter10pt7b);  // Set the custom font on sprite
-  sprite.setTextDatum(MC_DATUM); // Set text datum to Middle-Center for proper centering
-  
-  for (int i = 0; i < 12; i++) {
-      const float angle = (i / 12.0) * 2 * 3.1416 - 3.1416 / 2;
-      const int x = xpos + cos(angle) * scale * 1.2;
-      const int y = ypos + sin(angle) * scale * 1.2;
-      const int xm = xpos + cos(angle) * scale * 0.85;
-      const int ym = ypos + sin(angle) * scale * 0.85;
-
-      //sprite.drawString(String(i == 0 ? 12 : i), x, y);
-      // Translate i to roman numeral
-      String romanNumeral;
-      switch (i) {
-        case 0: romanNumeral = "XII"; break;
-        case 1: romanNumeral = "I"; break;
-        case 2: romanNumeral = "II"; break;
-        case 3: romanNumeral = "III"; break;
-        case 4: romanNumeral = "IV"; break;
-        case 5: romanNumeral = "V"; break;
-        case 6: romanNumeral = "VI"; break;
-        case 7: romanNumeral = "VII"; break;
-        case 8: romanNumeral = "VIII"; break;
-        case 9: romanNumeral = "IX"; break;
-        case 10: romanNumeral = "X"; break;
-        case 11: romanNumeral = "XI"; break;
-      }
-      // Draw centered text - MC_DATUM centers both horizontally and vertically
-      sprite.drawString(romanNumeral, x, y);
-
-
-      const int ix = xpos + cos(angle) * scale * indlen;
-      const int iy = ypos + sin(angle) * scale * indlen;
-      //sprite.drawLine(xpos + cos(angle) * (scale - ix), ypos + sin(angle) * (scale - iy), x, y, TFT_LIGHTGREY);
-      // Scale line widths proportionally
-      // EA 2025-11-23 Modify scale for marker lines, we want them much further out
-      if (i % 3 == 0)
-        sprite.drawWideLine(xm, ym, ix, iy, max(1, (int)(5 * CLOCK_SCALE)), TFT_LIGHTGREY);
-      else  
-        sprite.drawWideLine(xm, ym, ix, iy, max(1, (int)(3 * CLOCK_SCALE)), TFT_LIGHTGREY);
-
-      // if (i % 3 == 0)
-      //   sprite.drawWideLine(x, y, ix, iy, max(1, (int)(3 * CLOCK_SCALE)), TFT_LIGHTGREY);
-      // else  
-      //   sprite.drawLine(x, y, ix, iy, TFT_LIGHTGREY);
-  } 
-}
-
-void UpdateClockFace() {
-  // Ensure sprite is created
-  if (!sprite.created()) {
-    Serial.println("Sprite not created, creating now...");
-    sprite.createSprite(SPRITE_WIDTH, SPRITE_HEIGHT);
-    sprite.setPivot(SPRITE_WIDTH/2, SPRITE_HEIGHT/2);
-  }
-  
-  // Get current time
-  time_t now = time(nullptr);
-  localtime_r(&now, &timeinfo);
-
-  //timeinfo.tm_sec += 1;
-
-  int hours = timeinfo.tm_hour;
-  int minutes = timeinfo.tm_min;
-  int seconds = timeinfo.tm_sec;
-
-  // Calculate angles
-  float secondAngle = (seconds / 60.0) * 2 * 3.1416 - 3.1416 / 2;
-  float minuteAngle = (minutes / 60.0) * 2 * 3.1416 - 3.1416 / 2 + (secondAngle + 3.1416 / 2) / 60.0;
-  float hourAngle = ((hours % 12) / 12.0) * 2 * 3.1416 - 3.1416 / 2 + (minuteAngle + 3.1416 / 2) / 12.0;
-
-  // Load background image from LittleFS to sprite
-  // Note: This loads line-by-line so it's memory efficient
-  loadImageToSpriteFromLittleFS(sprite, "/backclock.rgb565", 0, 0, SPRITE_WIDTH, SPRITE_HEIGHT);
-  
-  // Calculate clock position in full-screen sprite (centered)
-  int clockCenterX = SPRITE_WIDTH / 2;
-  int clockCenterY = SPRITE_HEIGHT / 2;
-  // Apply scale to clock radius
-  float clockRadius = (CLOCK_WIDTH / 2) * CLOCK_SCALE;
-
-  // Draw clock face (numbers and hour markers)
-  DrawClockFace(clockCenterX, clockCenterY, clockRadius);
-
-  // Draw hour hand on sprite (scaled)
-  int hourX = clockCenterX + cos(hourAngle) * (clockRadius * 0.5);
-  int hourY = clockCenterY + sin(hourAngle) * (clockRadius * 0.5);
-  sprite.drawWideLine(clockCenterX, clockCenterY, hourX, hourY, max(1, (int)(5 * CLOCK_SCALE)), TFT_WHITE);
-
-  // Draw minute hand on sprite (scaled)
-  int minuteX = clockCenterX + cos(minuteAngle) * (clockRadius * 0.7);
-  int minuteY = clockCenterY + sin(minuteAngle) * (clockRadius * 0.7);
-  sprite.drawWideLine(clockCenterX, clockCenterY, minuteX, minuteY, max(1, (int)(3 * CLOCK_SCALE)), TFT_WHITE);
-
-  // Draw second hand on sprite (scaled)
-  int secondX = clockCenterX + cos(secondAngle) * (clockRadius * 0.9);
-  int secondY = clockCenterY + sin(secondAngle) * (clockRadius * 0.9);
-  sprite.drawLine(clockCenterX, clockCenterY, secondX, secondY, TFT_RED);
-
-  // Push the entire full-screen sprite to display with 90° rotation
-  //tft.setPivot(TFT_WIDTH / 2, TFT_HEIGHT / 2); // Set pivot to center of display
-  sprite.pushRotated(90); // Rotate 90 degrees clockwise - no transparency needed now
 }
 
 // Load RGB565 image from LittleFS and display on TFT
@@ -1252,91 +684,6 @@ void loadImageToSpriteFromLittleFS(TFT_eSprite &spr, const char* filename, int x
   // Serial.println("Image loaded to sprite successfully");
 }
 
-// Function GetNinjaQuote(), return malloc'd char array (CALLER MUST FREE!)
-// Returns nullptr on error
-char* GetNinjaQuote() {
-  // Setup GET request to quote API using WiFiClientSecure
-  WiFiClientSecure client;
-  client.setInsecure(); // Skip certificate validation
-  
-  const char* host = "api.api-ninjas.com";
-  const int httpsPort = 443;
-  
-  Serial.println("Connecting to API Ninjas...");
-  if (!client.connect(host, httpsPort)) {
-    Serial.println("ERROR: Failed to connect to quote API");
-    return nullptr;
-  }
-  
-  // Send HTTP GET request (fixed typo: GET not GE4T)
-  client.print("GET /v1/quotes HTTP/1.1\r\n");
-  client.print("Host: ");
-  client.print(host);
-  client.print("\r\n");
-  client.print("X-Api-Key: ");
-  client.print(API_NINJAS_KEY);
-  client.print("\r\n");
-  client.print("Connection: close\r\n");
-  client.print("\r\n");
-  
-  // Wait for response
-  unsigned long timeout = millis();
-  while (client.available() == 0) {
-    if (millis() - timeout > 5000) {
-      Serial.println("ERROR: API request timeout");
-      client.stop();
-      return nullptr;
-    }
-  }
-  
-  // Read status line
-  String statusLine = client.readStringUntil('\n');
-  Serial.print("API Status: ");
-  Serial.println(statusLine);
-  
-  // Skip headers
-  while (client.available()) {
-    String line = client.readStringUntil('\n');
-    line.trim();
-    if (line.length() == 0) {
-      break; // End of headers
-    }
-  }
-  
-  // Read response body (simple read, API response should be small)
-  String response = "";
-  while (client.available()) {
-    response += (char)client.read();
-  }
-  
-  client.stop();
-  
-  Serial.println("Response: " + response);
-  
-  // Parse JSON and extract quote
-  StaticJsonDocument<512> doc;
-  DeserializationError error = deserializeJson(doc, response);
-  if (!error) {
-    const char* quote = doc[0]["quote"]; // API returns array, get first element
-    if (quote) {
-      // Allocate memory and copy the quote string
-      size_t len = strlen(quote);
-      char* result = (char*)malloc(len + 1);
-      if (result) {
-        strcpy(result, quote);
-        return result;
-      } else {
-        Serial.println("ERROR: malloc failed");
-        return nullptr;
-      }
-    }
-  }
-  
-  Serial.print("ERROR: JSON parsing failed: ");
-  Serial.println(error.c_str());
-  return nullptr;
-}
-
 void drawWrappedText(TFT_eSprite &spr, const char* text, int x, int y, int maxWidth, int lineHeight) {
   spr.setFreeFont(&GilliganShutter10pt7b);
   spr.setTextColor(TFT_WHITE);
@@ -1404,10 +751,33 @@ void displayStatusInfo() {
   tft.println(WiFi.isConnected() ? "Connected" : "Disconnected");
   y += lineHeight;
   
+  // Network Profile
+  tft.setCursor(10, y);
+  tft.print("Network: ");
+  tft.println(networkProfiles[currentProfileIndex].name);
+  y += lineHeight;
+  
   // IP Address
   tft.setCursor(10, y);
   tft.print("IP: ");
   tft.println(WiFi.localIP().toString());
+  y += lineHeight;
+  
+  // Gateway
+  tft.setCursor(10, y);
+  tft.print("Gateway: ");
+  tft.println(WiFi.gatewayIP().toString());
+  y += lineHeight;
+  
+  // DNS Servers
+  tft.setCursor(10, y);
+  tft.print("DNS 1: ");
+  tft.println(WiFi.dnsIP(0).toString());
+  y += lineHeight;
+  
+  tft.setCursor(10, y);
+  tft.print("DNS 2: ");
+  tft.println(WiFi.dnsIP(1).toString());
   y += lineHeight;
   
   // WiFi Signal Strength
