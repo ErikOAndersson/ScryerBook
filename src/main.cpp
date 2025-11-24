@@ -50,7 +50,7 @@ const int   daylightOffset_sec = 7200;
 // Image server configuration - can be changed via web interface
 String imageServerAddress = "witty-cliff-e5fe8cff64ae48afb25807a538c2dad2.azurewebsites.net";
 int imageServerPort = 443;  // HTTPS port
-String imageServerPath = "/?width=240&height=320&rotate=90";
+String imageServerPath = "/?width=240&height=320&rotate=270";
 
 // Local testing server
 // String imageServerAddress = "192.168.1.55";1
@@ -679,10 +679,16 @@ void renderJPEG(int xpos, int ypos) {
     
     // Rotate the image 180 degrees before pushing
     // Calculate rotated position
-    int rotated_x = JpegDec.width - (JpegDec.MCUx + 1) * JpegDec.MCUWidth + xpos;
-    int rotated_y = JpegDec.height - (JpegDec.MCUy + 1) * JpegDec.MCUHeight + ypos;
+    //int rotated_x = JpegDec.width - (JpegDec.MCUx + 1) * JpegDec.MCUWidth + xpos;
+    //int rotated_y = JpegDec.height - (JpegDec.MCUy + 1) * JpegDec.MCUHeight + ypos;
 
-    tft.pushImage(rotated_x, rotated_y, JpegDec.MCUWidth, JpegDec.MCUHeight, JpegDec.pImage);
+     // Don't rotate for now, just push normally
+     tft.pushImage(mcu_x, mcu_y, JpegDec.MCUWidth, JpegDec.MCUHeight, JpegDec.pImage);
+
+    //tft.pushImage(rotated_x, rotated_y, JpegDec.MCUWidth, JpegDec.MCUHeight, JpegDec.pImage);
+
+
+    
   }
 }
 
