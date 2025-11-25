@@ -12,6 +12,8 @@ struct NetworkProfile {
   IPAddress subnet;
   IPAddress primaryDNS;
   IPAddress secondaryDNS;
+  char wifiSSID[32];
+  char wifiPassword[32];
 };
 
 // Network management functions

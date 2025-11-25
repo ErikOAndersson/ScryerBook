@@ -5,32 +5,16 @@
 // NETWORK PROFILE SELECTION
 // Set this to "Home" or "Work" to force a specific profile
 // ======================================
-const char* PREFERRED_NETWORK = "Work";  // Change to "Work" or "Home" as needed
+const char* PREFERRED_NETWORK = "Work";  // For testing, this should be saved in settings otherwise
 
 // WiFi credentials - can be overridden by web settings
 String wifiSSID = WIFI_SSID;
 String wifiPassword = WIFI_PASSWORD;
 
 // Network Profiles - Add more as needed
+// Defined in wifi_credentials.h to keep sensitive data out of repository
 NetworkProfile networkProfiles[] = {
-  // HOME network
-  {
-    "Home",
-    IPAddress(192, 168, 1, 61),
-    IPAddress(192, 168, 1, 1),
-    IPAddress(255, 255, 255, 0),
-    IPAddress(8, 8, 8, 8),      // Google DNS
-    IPAddress(8, 8, 4, 4)
-  },
-  // WORK Guest WiFi network
-  {
-    "Work",
-    IPAddress(172, 31, 0, 250),
-    IPAddress(172, 31, 0, 1),
-    IPAddress(255, 255, 254, 0),
-    IPAddress(1, 1, 1, 1),       // Cloudflare DNS
-    IPAddress(9, 9, 9, 9)        // Quad9 DNS
-  }
+  NETWORK_PROFILES
 };
 
 const int numNetworkProfiles = sizeof(networkProfiles) / sizeof(networkProfiles[0]);

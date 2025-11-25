@@ -3,23 +3,48 @@
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 
+// WiFi client for HTTPS connections (persistent instance)
+WiFiClientSecure quoteClient;
+
 // Initialize quote system
 void initQuote() {
-  // Nothing to initialize currently
+  // Configure WiFiClientSecure to skip certificate validation
+  quoteClient.setInsecure();
+  quoteClient.setTimeout(10000); // Set timeout to 10 seconds
 }
 
 // Function GetNinjaQuote(), return malloc'd char array (CALLER MUST FREE!)
 // Returns nullptr on error
 char* GetNinjaQuote() {
-  // Setup GET request to quote API using WiFiClientSecure
-  WiFiClientSecure client;
-  client.setInsecure(); // Skip certificate validation
-  
-  const char* host = API_NINJAS_URL;    // "api.api-ninjas.com";
+  const char* host = API_NINJAS_HOST;
   const int httpsPort = 443;
   
-  Serial.println("Connecting to API Ninjas...");
-  if (!client.connect(host, httpsPort)) {
+  Serial.print("Connecting to API Ninjas (");
+  Serial.print(host);
+  Serial.println(")...");
+  
+  // Check DNS resolution first
+  IPAddress resolvedIP;
+  if (WiFi.hostByName(host, resolvedIP)) {
+    Serial.print("DNS resolved to: ");
+    Serial.println(resolvedIP);
+  } else {
+    Serial.println("ERROR: DNS resolution failed for API Ninjas!");
+    Serial.print("Current DNS servers: ");
+    Serial.print(WiFi.dnsIP(0).toString());
+    Serial.print(", ");
+    Serial.println(WiFi.dnsIP(1).toString());
+    char* result = (char*)malloc(strlen(tmp_quote) + 1);
+    if (result) {
+      strcpy(result, tmp_quote);
+    }
+    return result;
+  }
+  
+  // Stop any existing connection
+  quoteClient.stop();
+  
+  if (!quoteClient.connect(host, httpsPort)) {
     Serial.println("ERROR: Failed to connect to quote API. Using temporary quote.");
     char* result = (char*)malloc(strlen(tmp_quote) + 1);
     if (result) {
@@ -29,34 +54,36 @@ char* GetNinjaQuote() {
   }
   
   // Send HTTP GET request
-  client.print("GET /v1/quotes HTTP/1.1\r\n");
-  client.print("Host: ");
-  client.print(host);
-  client.print("\r\n");
-  client.print("X-Api-Key: ");
-  client.print(API_NINJAS_KEY);
-  client.print("\r\n");
-  client.print("Connection: close\r\n");
-  client.print("\r\n");
+  quoteClient.print("GET ");
+  quoteClient.print(API_NINJAS_PATH);
+  quoteClient.print(" HTTP/1.1\r\n");
+  quoteClient.print("Host: ");
+  quoteClient.print(host);
+  quoteClient.print("\r\n");
+  quoteClient.print("X-Api-Key: ");
+  quoteClient.print(API_NINJAS_KEY);
+  quoteClient.print("\r\n");
+  quoteClient.print("Connection: close\r\n");
+  quoteClient.print("\r\n");
   
   // Wait for response
   unsigned long timeout = millis();
-  while (client.available() == 0) {
+  while (quoteClient.available() == 0) {
     if (millis() - timeout > 5000) {
       Serial.println("ERROR: API request timeout");
-      client.stop();
+      quoteClient.stop();
       return nullptr;
     }
   }
   
   // Read status line
-  String statusLine = client.readStringUntil('\n');
+  String statusLine = quoteClient.readStringUntil('\n');
   Serial.print("API Status: ");
   Serial.println(statusLine);
   
   // Skip headers
-  while (client.available()) {
-    String line = client.readStringUntil('\n');
+  while (quoteClient.available()) {
+    String line = quoteClient.readStringUntil('\n');
     line.trim();
     if (line.length() == 0) {
       break; // End of headers
@@ -65,11 +92,11 @@ char* GetNinjaQuote() {
   
   // Read response body (simple read, API response should be small)
   String response = "";
-  while (client.available()) {
-    response += (char)client.read();
+  while (quoteClient.available()) {
+    response += (char)quoteClient.read();
   }
   
-  client.stop();
+  quoteClient.stop();
   
   Serial.println("Response: " + response);
   

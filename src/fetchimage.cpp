@@ -167,12 +167,22 @@ void fetchAndDisplayImage() {
   wifi.stop();
   
   // Connect directly using WiFiClientSecure
+  int attempts = 1;
   Serial.println("Attempting SSL connection...");
   if (!wifi.connect(imageServerAddress.c_str(), imageServerPort)) {
     Serial.println("Connection failed!");
     // Recreate sprite before returning
     sprite.createSprite(SPRITE_WIDTH, SPRITE_HEIGHT);
     sprite.setPivot(SPRITE_WIDTH/2, SPRITE_HEIGHT/2);
+
+    // Display error on screen
+    //tft.fillScreen(TFT_BLACK);
+    tft.setTextColor(TFT_RED, TFT_BLACK);
+    tft.setCursor(20, 50);
+     
+    tft.print("DNS failure ");
+    tft.println(attempts);
+
     return;
   }
   

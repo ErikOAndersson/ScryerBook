@@ -105,7 +105,9 @@ void UpdateClockFace() {
 
   // Load background image from LittleFS to sprite
   // Note: This loads line-by-line so it's memory efficient
-  loadImageToSpriteFromLittleFS(sprite, "/backclock.rgb565", 0, 0, SPRITE_WIDTH, SPRITE_HEIGHT, 0xFFFF);
+  //loadImageToSpriteFromLittleFS(sprite, "/backclock.rgb565", 0, 0, SPRITE_WIDTH, SPRITE_HEIGHT, 0xFFFF);
+  // Trying out .jpg instead
+  loadJpegToSpriteFromLittleFS(sprite, "/backclock.jpg", 0, 0);
   
   // Calculate clock position in full-screen sprite (centered)
   int clockCenterX = SPRITE_WIDTH / 2;

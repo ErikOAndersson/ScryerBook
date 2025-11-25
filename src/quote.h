@@ -4,7 +4,8 @@
 #include <Arduino.h>
 
 // Api from api-ninjas.com
-#define API_NINJAS_URL "https://api.api-ninjas.com/v1/"
+#define API_NINJAS_HOST "api.api-ninjas.com"
+#define API_NINJAS_PATH "/v1/quotes"
 #define API_NINJAS_KEY "oc9IJzYB5MIJToPwxULcEg==7Xsm6HptY9Pclqk8"
 
 // Initialize quote system
