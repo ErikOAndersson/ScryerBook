@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include "main.h"
 
 // Function declarations
 void handleWebServer();
@@ -18,6 +19,8 @@ extern String imageServerPath;
 extern unsigned long fetchInterval;
 extern bool useStaticImage;
 extern bool useClockMode;
+extern MODE _mode;
+extern ALBUM_MODE_TYPE albumMode;
 
 // External function from main.cpp
 extern void saveSettings();

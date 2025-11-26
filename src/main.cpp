@@ -52,9 +52,11 @@ bool useClockMode = false;
 // Timing - can be changed via web interface
 unsigned long lastFetchTime = 99999999; // Force immediate fetch on startup
 unsigned long fetchInterval = 20000; // 20 seconds (default)
+unsigned long albumFetchInterval = 60000; // 60 seconds (default)
 // lastStatusUpdateTime >= statusUpdateInterval
 unsigned long lastStatusUpdateTime = 99999999; // Force immediate status update on startup
 unsigned long statusUpdateInterval = 5000; // 5 seconds (default)
+unsigned long lastAlbumDisplayTime = 99999999; // Force immediate album change on startup
 
 
 // TFT instance
@@ -80,6 +82,9 @@ int count = 0;
 // ToDo: Make this a setting
 MODE _mode = CLOCK;
 
+// Define the album mode variable (declared as extern in main.h)
+ALBUM_MODE_TYPE albumMode;
+
 // Temporary for testing, remove this
 //const char tmp_quote[] = "I slept with faith and found a corpse in my arms on awakening I drank and danced all night with doubt and found her a virgin in the morning.";
 
@@ -100,6 +105,9 @@ void setup() {
 
   Serial.println("=== ScryerBook Starting ===");
 
+  // Default value for album mode
+  albumMode = NATURE;
+  
   // Load saved settings from preferences
   Serial.println("Loading settings...");
   loadSettings();
@@ -308,7 +316,7 @@ void loop() {
           loadImageToSpriteFromLittleFS(sprite, "/fleuron.rgb565", 100, 200, 120, 33, 0xF81F);
         }
 
-
+        lastFetchTime = currentTime;
         sprite.pushRotated(90);
 
         // // Draw text on the sprite BEFORE rotating
@@ -346,9 +354,9 @@ void loop() {
 
   // useStaticImage
   if (_mode == ALBUM) {
-    // Static image mode - load and display static1.h file once
-    static bool imageDisplayed = false;
-    if (!imageDisplayed) {
+    unsigned long currentTime = millis();
+
+    if (currentTime - lastAlbumDisplayTime >= albumFetchInterval) {
       // Ensure sprite is created
       if (!sprite.created()) {
         Serial.println("Sprite not created, creating now...");
@@ -361,20 +369,34 @@ void loop() {
       // Using .rgb565 format images
       //loadImageToSpriteFromLittleFS(sprite, "/static1.rgb565", 0, 0);
 
-      // Using plain .jpg files
-      loadJpegToSpriteFromLittleFS(sprite, "/backclock.jpg", 0, 0);
+      int randomNumber = -1;
+      // Get random number
+      if (albumMode == NATURE) {
+        randomNumber = random(1, 10);
+        Serial.print("Album mode: NATURE ");
+        Serial.println(randomNumber);
+
+      } else {
+        randomNumber = random(1, 22);
+        Serial.print("Album mode: SYNTHWAVE ");
+        Serial.println(randomNumber);
+      }
       
-      // Draw text on the sprite BEFORE rotating
-      //sprite.setFreeFont(&GilliganShutter10pt7b);  // Set the custom font on sprite
-      //sprite.setTextColor(TFT_WHITE, TFT_BLACK);   // White text, black background
-      //sprite.setTextDatum(MC_DATUM);               // Middle center alignment
-      //sprite.drawString("As long as you live...", SPRITE_WIDTH / 2, SPRITE_HEIGHT / 2);
+      char imagePath[32];
+      const char* modeStr = (albumMode == NATURE) ? "nt" : "sw";
+      snprintf(imagePath, sizeof(imagePath), "/alb_%s_%d.jpg", modeStr, randomNumber);
+
+      // Using plain .jpg files
+      //loadJpegToSpriteFromLittleFS(sprite, "/backclock.jpg", 0, 0);
+
+      // Using random image filename
+      loadJpegToSpriteFromLittleFS(sprite, imagePath, 0, 0);
       
       // Now push the sprite with text rotated 90 degrees
       sprite.pushRotated(90);
-      Serial.println("Static image displayed.");
-      
-      imageDisplayed = true;
+      //Serial.println("Static image displayed.");
+
+      lastAlbumDisplayTime = currentTime;
     }
   }
 

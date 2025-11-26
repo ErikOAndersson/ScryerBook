@@ -10,7 +10,10 @@
 #define SPRITE_HEIGHT 240
 
 enum MODE { FETCH, CLOCK, ALBUM, QUOTE, STATUSINFO, NETWORK, NONE  };
-#define VERSION "1.0.1115"
+enum ALBUM_MODE_TYPE { NATURE, SYNTHWAVE };
+#define VERSION "1.0.1126"
+
+extern ALBUM_MODE_TYPE albumMode;
 
 // Function declarations5
 void Blip(int blips);
