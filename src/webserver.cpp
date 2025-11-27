@@ -115,6 +115,7 @@ const char HTML_SETTINGS_PAGE[] PROGMEM = R"(
       <option value='QUOTE'%QUOTE_SELECTED%>Quote</option>
       <option value='STATUSINFO'%STATUSINFO_SELECTED%>Status Info</option>
       <option value='NETWORK'%NETWORK_SELECTED%>Network Picker</option>
+      <option value='SCREENSAVER'%SCREENSAVER_SELECTED%>Screensaver</option>
     </select>
     
     <label>Album Mode:</label>
@@ -275,6 +276,7 @@ void handleWebServer() {
                   else if (modeStr == "QUOTE") _mode = QUOTE;
                   else if (modeStr == "STATUSINFO") _mode = STATUSINFO;
                   else if (modeStr == "NETWORK") _mode = NETWORK;
+                  else if (modeStr == "SCREENSAVER") _mode = SCREENSAVER;
                   
                   // Update legacy flags for backward compatibility
                   useStaticImage = (_mode == ALBUM);
@@ -338,6 +340,7 @@ void handleWebServer() {
             html.replace("%QUOTE_SELECTED%", _mode == QUOTE ? " selected" : "");
             html.replace("%STATUSINFO_SELECTED%", _mode == STATUSINFO ? " selected" : "");
             html.replace("%NETWORK_SELECTED%", _mode == NETWORK ? " selected" : "");
+            html.replace("%SCREENSAVER_SELECTED%", _mode == SCREENSAVER ? " selected" : "");
             
             // Set selected option for album mode dropdown
             html.replace("%ALBUM_NT_SELECTED%", albumMode == NATURE ? " selected" : "");
