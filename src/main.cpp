@@ -18,7 +18,7 @@
 #include "time.h"
 #include <JPEGDecoder.h>
 #include "dodecahedron.h"
-
+#include "fractal.h"
 
 using fs::File;
 
@@ -76,6 +76,8 @@ unsigned long lastStatusUpdateTime = 99999999; // Force immediate status update 
 unsigned long statusUpdateInterval = 5000; // 5 seconds (default)
 unsigned long lastAlbumDisplayTime = 99999999; // Force immediate album change on startup
 static unsigned long lastScreensaverUpdateTime = 0;
+unsigned long fractalUpdateInterval = 100; // Update fractal every 1 second
+unsigned long lastFractalUpdateTime = 99999999; // Force immediate fractal update on startup
 
 // TFT instance
 TFT_eSPI tft = TFT_eSPI();  
@@ -85,10 +87,6 @@ TFT_eSprite sprite = TFT_eSprite(&tft); // Create a sprite instance
 
 // do not forget User_Setup_xxxx.h matching microcontroller-display combination
  // my own: "/include/User_Setup.h"
-
-#define PIN_LED 21
-#define PIN_BTN1 8
-#define PIN_BTN2 9
 
 byte networkProfileCount = 0;
 
@@ -163,7 +161,7 @@ void setup() {
 
   // For debugging/testing REMOVE THIS
   //_mode = SCREENSAVER;
-  _mode = CLOCK;
+  _mode = FRACTAL;
 
   delay(100);  // Let pins stabilize
 
@@ -254,6 +252,9 @@ void setup() {
     Serial.println(&timeinfo, "Current time: %Y-%m-%d %H:%M:%S");
   }
 
+  // Init the fractal module
+  initFractal();
+
   // Final setup complete message
   displaySetupProgress("Ready!");
   delay(1000);
@@ -291,6 +292,17 @@ void loop() {
 #if ENABLE_WIFI
   handleWebServer();
 #endif
+
+  // -==*==- -==*==- -==*==- -==*==- -==*==- -==*==- -==*==- -==*==- -==*==- -==*==- 
+  if (_mode == FRACTAL) {
+        unsigned long currentTime = millis();
+    if (currentTime - lastFractalUpdateTime >= fractalUpdateInterval) {
+      lastFractalUpdateTime = currentTime;
+      // Fractal mode - display fractal
+      displayFractal();
+    }
+  }
+
 
   // -==*==- -==*==- -==*==- -==*==- -==*==- -==*==- -==*==- -==*==- -==*==- -==*==- 
   if (_mode == NETWORK) {
@@ -518,13 +530,15 @@ void btn1Pressed() {
   tft.println("6. Pick Network");
   tft.setCursor(40, lineHeight * 8  );
   tft.println("7. Screensaver");
+  tft.setCursor(40, lineHeight * 9  );
+  tft.println("8. Fractal");
 
   // Initialize position based on current mode
-  byte position = (_mode >= FETCH && _mode <= NETWORK) ? static_cast<byte>(_mode) : 0;
+  byte position = (_mode >= FETCH && _mode <= FRACTAL) ? static_cast<byte>(_mode) : 0;
   
   while (true) {
     // Highlight current selection
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < 8; i++) {
       if (i == position) {
         tft.setTextColor(TFT_DARKGREEN, TFT_GREENYELLOW);
       } else {
@@ -542,13 +556,14 @@ void btn1Pressed() {
         case 4: tft.println("5. Show Status"); break;
         case 5: tft.println("6. Pick Network"); break;
         case 6: tft.println("7. Screensaver"); break;
+        case 7: tft.println("8. Fractal"); break;
       }
     }
 
     // Check button 1 press to move selection
     if (digitalRead(PIN_BTN1) == LOW) {
       // Move to next position
-      position = (position + 1) % 7;
+      position = (position + 1) % 8;
       // Wait for button release
       while (digitalRead(PIN_BTN1) == LOW) {
         delay(10);

@@ -5,11 +5,17 @@
 #define __MAIN_H__ 
 
 #define ENABLE_WIFI true
+
+// Pin definitions
+#define PIN_LED 21
+#define PIN_BTN1 8
+#define PIN_BTN2 9
+
 // Full screen sprite dimensions (rotated - we rotate the sprite 90° when displaying)
 #define SPRITE_WIDTH 320
 #define SPRITE_HEIGHT 240
 
-enum MODE { FETCH, CLOCK, ALBUM, QUOTE, STATUSINFO, NETWORK, SCREENSAVER, NONE  };
+enum MODE { FETCH, CLOCK, ALBUM, QUOTE, STATUSINFO, NETWORK, SCREENSAVER, FRACTAL, NONE  };
 enum ALBUM_MODE_TYPE { NATURE, SYNTHWAVE };
 #define VERSION "1.0.1126"
 
