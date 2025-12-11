@@ -161,7 +161,8 @@ void setup() {
 
   // For debugging/testing REMOVE THIS
   //_mode = SCREENSAVER;
-  _mode = FRACTAL;
+  //_mode = FRACTAL;
+  _mode = CLOCK;
 
   delay(100);  // Let pins stabilize
 

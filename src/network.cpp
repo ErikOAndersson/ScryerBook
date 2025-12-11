@@ -5,7 +5,8 @@
 // NETWORK PROFILE SELECTION
 // Set this to "Home" or "Work" to force a specific profile
 // ======================================
-const char* PREFERRED_NETWORK = "Work";  // For testing, this should be saved in settings otherwise
+//const char* PREFERRED_NETWORK = "Work";  // For testing, this should be saved in settings otherwise
+const char* PREFERRED_NETWORK = "MobileWork";  // For testing, this should be saved in settings otherwise
 
 // WiFi credentials - can be overridden by web settings
 String wifiSSID = WIFI_SSID;
@@ -18,7 +19,8 @@ NetworkProfile networkProfiles[] = {
 };
 
 const int numNetworkProfiles = sizeof(networkProfiles) / sizeof(networkProfiles[0]);
-int currentProfileIndex = 0;  // Start with first profile (Home)
+//int currentProfileIndex = 0;  // Start with first profile (Home)
+int currentProfileIndex = 2;  // Start with profile index 2 (MobileWork) for testing
 
 // Active network configuration (loaded from current profile)
 IPAddress staticIP;

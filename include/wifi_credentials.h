@@ -47,3 +47,22 @@
   }
 
 #endif
+/*
+IPAddress staticIP;
+IPAddress gateway;
+IPAddress subnet;
+IPAddress primaryDNS;
+IPAddress secondaryDNS;
+
+
+  { \
+    "MobileWork", \
+    IPAddress(10, 10, 200, 251), \
+    IPAddress(10, 10, 200, 1), \
+    IPAddress(255, 255, 255, 0), \
+    IPAddress(10, 10, 3, 100), \
+    IPAddress(10, 10, 3, 101), \
+    "ErikCell", \
+    "gnugnu64" \
+  }
+*/
